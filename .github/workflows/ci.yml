@@ -7,6 +7,9 @@ on:
       - master
       - main
 
+permissions:
+  contents: write
+
 env:
   GH_TOKEN: ${{ github.token }}
 
@@ -37,3 +40,15 @@ jobs:
         run: build.bat
       - shell: cmd
         run: test.bat
+      - shell: cmd
+        run: if not exist dist mkdir dist
+      - shell: cmd
+        run: tar.exe -a -c -f dist\ceretree-windows-x64.zip -C bin ceretree.exe
+      - shell: cmd
+        run: tar.exe -czf dist\ceretree-linux-x64.tar.gz -C bin ceretree
+      - shell: cmd
+        run: git tag -f edge
+      - shell: cmd
+        run: git push origin refs\tags\edge --force
+      - shell: cmd
+        run: gh release view edge >nul 2>nul && gh release upload edge dist\ceretree-windows-x64.zip dist\ceretree-linux-x64.tar.gz --clobber || gh release create edge dist\ceretree-windows-x64.zip dist\ceretree-linux-x64.tar.gz --title edge --notes "Automated rolling prerelease from ci." --prerelease --latest=false

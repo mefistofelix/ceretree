@@ -121,6 +121,11 @@ Linux:
 ./build.sh
 ```
 
+CI publishes the successful branch build artifacts to the rolling GitHub prerelease tag `edge` as:
+
+- `ceretree-windows-x64.zip`
+- `ceretree-linux-x64.tar.gz`
+
 ## Tests
 
 Windows:
