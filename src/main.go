@@ -7,13 +7,14 @@ package main
 import "C"
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,7 +27,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.3.2"
+const version = "0.4.0"
 
 var supported_languages = []string{
 	"bash",
@@ -70,6 +71,7 @@ type runtime_context struct {
 	cache_dir       string
 	state_path      string
 	server_mode     bool
+	server_target   string
 	started_at      time.Time
 }
 
@@ -203,18 +205,18 @@ func main() {
 }
 
 func run(args []string) int {
-	request_text, server_mode, err := parse_cli_mode(args)
+	request_text, server_target, err := parse_cli_mode(args)
 	if err != nil {
 		return write_fatal(err)
 	}
 
-	context, err := new_runtime_context(server_mode)
+	context, err := new_runtime_context(server_target != "", server_target)
 	if err != nil {
 		return write_fatal(err)
 	}
 
-	if server_mode {
-		return serve_stdio(context)
+	if server_target != "" {
+		return serve_http(context)
 	}
 
 	request, response := decode_request([]byte(request_text))
@@ -230,27 +232,41 @@ func run(args []string) int {
 	return 0
 }
 
-func parse_cli_mode(args []string) (string, bool, error) {
+func parse_cli_mode(args []string) (string, string, error) {
 	if len(args) == 0 {
 		stdin, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return "", false, err
+			return "", "", err
 		}
 		stdin = strip_utf8_bom(stdin)
 		if strings.TrimSpace(string(stdin)) == "" {
-			return "", false, errors.New("missing JSON-RPC request argument or stdin payload")
+			return "", "", errors.New("missing JSON-RPC request argument or stdin payload")
 		}
-		return string(stdin), false, nil
+		return string(stdin), "", nil
+	}
+
+	if strings.HasPrefix(args[0], "--server=") {
+		target := strings.TrimSpace(strings.TrimPrefix(args[0], "--server="))
+		if target == "" {
+			return "", "", errors.New("missing server target; use --server unix://path.sock or --server tcp://127.0.0.1:9000")
+		}
+		return "", target, nil
 	}
 
 	if args[0] == "-server" || args[0] == "--server" {
-		return "", true, nil
+		if len(args) != 2 {
+			return "", "", errors.New("server mode requires exactly one target; use --server unix://path.sock or --server tcp://127.0.0.1:9000")
+		}
+		if strings.TrimSpace(args[1]) == "" {
+			return "", "", errors.New("missing server target; use --server unix://path.sock or --server tcp://127.0.0.1:9000")
+		}
+		return "", args[1], nil
 	}
 
-	return strings.Join(args, " "), false, nil
+	return strings.Join(args, " "), "", nil
 }
 
-func new_runtime_context(server_mode bool) (*runtime_context, error) {
+func new_runtime_context(server_mode bool, server_target string) (*runtime_context, error) {
 	executable_path, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -266,50 +282,100 @@ func new_runtime_context(server_mode bool) (*runtime_context, error) {
 		cache_dir:       cache_dir,
 		state_path:      filepath.Join(cache_dir, "state.json"),
 		server_mode:     server_mode,
+		server_target:   server_target,
 		started_at:      time.Now().UTC(),
 	}, nil
 }
 
-func serve_stdio(context *runtime_context) int {
-	reader := bufio.NewReader(os.Stdin)
-	encoder := json.NewEncoder(os.Stdout)
+func serve_http(context *runtime_context) int {
+	network, address, err := decode_server_target(context.server_target)
+	if err != nil {
+		return write_fatal(err)
+	}
 
-	for {
-		raw, err := reader.ReadBytes('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			response := &rpc_response{
-				JSONRPC: "2.0",
-				Error: &rpc_error_body{
-					Code:    -32700,
-					Message: fmt.Sprintf("invalid JSON: %v", err),
-				},
-			}
-			_ = encoder.Encode(response)
-			return 1
-		}
-
-		raw = normalize_json_input(raw)
-		if len(raw) == 0 {
-			if errors.Is(err, io.EOF) {
-				return 0
-			}
-			continue
-		}
-
-		request, response := decode_request(raw)
-		if response == nil {
-			result, call_err := dispatch(context, request)
-			response = build_response(request.ID, result, call_err)
-		}
-
-		if err := encoder.Encode(response); err != nil {
+	if network == "unix" {
+		if err := os.MkdirAll(filepath.Dir(address), 0o755); err != nil {
 			return write_fatal(err)
 		}
-
-		if errors.Is(err, io.EOF) {
-			return 0
-		}
+		_ = os.Remove(address)
 	}
+
+	listener, err := net.Listen(network, address)
+	if err != nil {
+		return write_fatal(err)
+	}
+	defer listener.Close()
+	if network == "unix" {
+		defer os.Remove(address)
+	}
+
+	server := http.Server{
+		Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			serve_http_request(context, writer, request)
+		}),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return write_fatal(err)
+	}
+
+	return 0
+}
+
+func decode_server_target(target string) (string, string, error) {
+	if strings.HasPrefix(target, "unix://") {
+		address := strings.TrimSpace(strings.TrimPrefix(target, "unix://"))
+		if address == "" {
+			return "", "", invalid_params("unix server target must be unix://path.sock")
+		}
+		address = filepath.FromSlash(address)
+		if !filepath.IsAbs(address) {
+			absolute, err := filepath.Abs(address)
+			if err != nil {
+				return "", "", err
+			}
+			address = absolute
+		}
+		return "unix", filepath.Clean(address), nil
+	}
+
+	if strings.HasPrefix(target, "tcp://") {
+		address := strings.TrimSpace(strings.TrimPrefix(target, "tcp://"))
+		if _, _, err := net.SplitHostPort(address); err != nil {
+			return "", "", invalid_params("tcp server target must be tcp://host:port")
+		}
+		return "tcp", address, nil
+	}
+
+	return "", "", invalid_params("server target must use unix://path.sock or tcp://host:port")
+}
+
+func serve_http_request(context *runtime_context, writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if request.URL.Path != "/" && request.URL.Path != "/rpc" {
+		http.NotFound(writer, request)
+		return
+	}
+
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		http.Error(writer, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	rpc_request, response := decode_request(body)
+	if response == nil {
+		result, call_err := dispatch(context, rpc_request)
+		response = build_response(rpc_request.ID, result, call_err)
+	}
+
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(response)
 }
 
 func decode_request(data []byte) (*rpc_request, *rpc_response) {
@@ -433,7 +499,8 @@ func handle_system_describe(context *runtime_context, _ json.RawMessage) (any, e
 		"server_mode": map[string]any{
 			"implemented": true,
 			"active":      context.server_mode,
-			"transports":  []string{"stdio"},
+			"target":      context.server_target,
+			"transports":  []string{"http+unix-socket", "http+tcp"},
 		},
 		"methods": []string{
 			"system.describe",
@@ -471,6 +538,7 @@ func handle_index_status(context *runtime_context, _ json.RawMessage) (any, erro
 		"state_path":            context.state_path,
 		"roots":                 state.Roots,
 		"server_mode":           context.server_mode,
+		"server_target":         context.server_target,
 		"started_at":            context.started_at.Format(time.RFC3339Nano),
 		"cache_files":           describe_cache_files(context.cache_dir, []string{"state.json", "last-query.json", "last-symbols-overview.json"}),
 		"last_query":            last_query,

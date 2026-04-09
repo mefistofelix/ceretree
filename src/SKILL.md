@@ -4,10 +4,10 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 
 ## Current state and transport direction
 
-- Current released builds support one-shot CLI JSON-RPC and stdio server mode.
-- The preferred future persistent transport is plain HTTP request response over a Unix domain socket while keeping JSON-RPC 2.0 as the message format.
-- The reason is practical: many agent runtimes can reissue independent HTTP requests easily, but cannot keep and reuse a subprocess stdio handle across separate tool calls.
-- When the Unix-socket HTTP server lands, prefer that transport over stdio for persistent multi-request workflows.
+- Current builds support one-shot CLI JSON-RPC and persistent HTTP JSON-RPC server mode.
+- Persistent server mode accepts `--server unix://path.sock` and `--server tcp://host:port`.
+- Prefer Unix-socket HTTP for agent workflows because many agent runtimes can reissue independent HTTP requests easily, but cannot keep and reuse a subprocess stdio handle across separate tool calls.
+- Keep JSON-RPC 2.0 as the message format for one-shot CLI and server mode so method names, responses and errors stay consistent.
 - On Windows, if you use curl, call the real binary `curl.exe`, not the PowerShell alias `curl`.
 
 ## When to use which command
@@ -37,15 +37,44 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 - Choose a unique temporary Unix socket path yourself.
 - Start the server once and give that process a long timeout so you can reuse it across many requests.
 - Keep the server alive while doing other agent work between requests.
-- Send simple HTTP `POST` requests carrying one JSON-RPC request body and expect one JSON-RPC response body back.
+- Send simple HTTP `POST` requests to `/rpc`, carrying one JSON-RPC request body and expecting one JSON-RPC response body back.
 - Use a curl-compatible client so the same flow works on Windows and Linux.
 - Stop the server explicitly when finished and remove the socket path.
+
+## Preferred server commands
+
+- Windows preferred:
+  `ceretree.exe --server unix://C:/temp/ceretree.sock`
+- Linux preferred:
+  `./ceretree --server unix:///tmp/ceretree.sock`
+- TCP fallback:
+  `ceretree --server tcp://127.0.0.1:9000`
 
 ## Windows note
 
 - In PowerShell, `curl` is often an alias and should not be assumed to support Unix sockets correctly.
 - Prefer `curl.exe` on Windows when using Unix-socket HTTP.
 - On Unix-like shells, prefer the normal `curl` binary.
+
+## Curl examples
+
+Windows Unix socket:
+
+```text
+curl.exe --unix-socket C:/temp/ceretree.sock -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://localhost/rpc
+```
+
+Linux Unix socket:
+
+```text
+curl --unix-socket /tmp/ceretree.sock -H 'content-type: application/json' -X POST --data-binary '{"jsonrpc":"2.0","id":1,"method":"system.describe"}' http://localhost/rpc
+```
+
+TCP fallback:
+
+```text
+curl -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"index.status\"}" http://127.0.0.1:9000/rpc
+```
 
 ## Why keep raw Tree-sitter queries available
 

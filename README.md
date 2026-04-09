@@ -7,9 +7,10 @@
 The current implementation provides:
 
 - one-shot CLI execution through a raw JSON-RPC request passed as the first argument or through stdin
-- stdio JSON-RPC server mode through `--server`
-- stdio server framing uses one JSON-RPC request per line and returns one JSON-RPC response per line
-- UTF-8 BOM on stdin is tolerated in one-shot mode and stdio server mode for better Windows PowerShell interoperability
+- HTTP JSON-RPC server mode through `--server unix://path.sock` or `--server tcp://host:port`
+- one HTTP `POST` request produces one JSON-RPC response on `/rpc`
+- Unix domain socket is the preferred persistent transport for agent workflows, with TCP as a fallback
+- UTF-8 BOM on stdin is tolerated in one-shot CLI mode for better Windows PowerShell interoperability
 - persistent root registration in `bin/.ceretree-cache/state.json`
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary
@@ -40,11 +41,8 @@ Current supported grammars:
 
 Current scope limits:
 
-- server mode currently supports stdio only
-- unix socket and network socket server transports are not implemented yet
 - filesystem watch and realtime reload are not implemented yet
 - cache currently stores runtime state and query metadata, not reusable serialized syntax trees
-- release packaging and GitHub release automation are not implemented yet
 
 ## Build architecture
 
@@ -181,13 +179,43 @@ The black-box tests exercise:
 - `symbols.find` on `src/main.go`
 - `calls.find` on `src/main.go`
 - `query.common` on `src/main.go`
-- stdio server mode request streaming
+- one-shot stdin with UTF-8 BOM
+- persistent HTTP server mode over Unix socket
+- persistent HTTP server mode over TCP
 
 The build no longer compiles `tree-sitter-cli` locally. It downloads the official upstream release binary for the current platform and uses Bun as the JavaScript runtime for `tree-sitter generate`.
 
 For grammars that depend on JavaScript packages, the build runs `bun install --ignore-scripts` in the grammar repository root and, when present, again in the grammar subdirectory. This matters for repositories such as `tree-sitter-typescript`, where both `tsx/grammar.js` and `typescript/grammar.js` resolve dependencies from the repository root.
 
 ## JSON-RPC methods
+
+Server transport:
+
+- start with `ceretree --server unix://path.sock`
+- or start with `ceretree --server tcp://127.0.0.1:9000`
+- send HTTP `POST` requests to `/rpc`
+- request and response bodies stay JSON-RPC `2.0`
+
+Unix-socket example on Windows with `curl.exe`:
+
+```bat
+ceretree --server unix://C:/temp/ceretree.sock
+curl.exe --unix-socket C:/temp/ceretree.sock -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://localhost/rpc
+```
+
+Unix-socket example on Linux:
+
+```sh
+./ceretree --server unix:///tmp/ceretree.sock
+curl --unix-socket /tmp/ceretree.sock -H 'content-type: application/json' -X POST --data-binary '{"jsonrpc":"2.0","id":1,"method":"system.describe"}' http://localhost/rpc
+```
+
+TCP example:
+
+```text
+ceretree --server tcp://127.0.0.1:9000
+curl -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://127.0.0.1:9000/rpc
+```
 
 `system.describe`
 
@@ -332,3 +360,4 @@ Recommended flow:
 - use `calls.find` or `query.common` for common usage patterns
 - use `limit` and `offset` on large codebases to page through broad results instead of pulling everything at once
 - use `query` for low-level or unusual cases where the high-level RPCs are not enough
+- for persistent workflows, prefer `--server unix://...` plus `curl` or `curl.exe`

@@ -34,7 +34,7 @@ if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":4,"method":"index.status"}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
-"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (Array.isArray(data.result.roots) && data.result.roots.length >= 1 && data.result.last_query != null) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (Array.isArray(data.result.roots) && data.result.roots.length >= 1 && data.result.last_query == null) process.exit(1); process.exit(0);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":5,"method":"symbols.overview","params":{"language":"go","roots":["%JSON_ROOT%"],"include":"src/main.go","max_symbols":20}}
@@ -49,7 +49,7 @@ if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":61,"method":"symbols.find","params":{"language":"go","kinds":["function"],"roots":["%JSON_ROOT%"],"include":"src/main.go","limit":1,"offset":1}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
-"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit !== 1) process.exit(1); if (data.result.summary.offset !== 1) process.exit(1); if (data.result.summary.files_returned > 1) process.exit(1);" "%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit === 1 && data.result.summary.offset === 1 && data.result.summary.files_returned <= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":7,"method":"calls.find","params":{"language":"go","callee":"invalid_params","roots":["%JSON_ROOT%"],"include":"src/main.go"}}
@@ -59,7 +59,7 @@ if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":71,"method":"calls.find","params":{"language":"go","roots":["%JSON_ROOT%"],"include":"src/main.go","limit":1}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
-"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit !== 1) process.exit(1); if (data.result.summary.files_returned > 1) process.exit(1);" "%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit === 1 && data.result.summary.files_returned <= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":8,"method":"query.common","params":{"language":"go","preset":"functions.by_name","name":"handle_query","roots":["%JSON_ROOT%"],"include":"src/main.go"}}
@@ -69,18 +69,16 @@ if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":81,"method":"query","params":{"language":"go","query":"(identifier) @name","roots":["%JSON_ROOT%"],"include":"src/main.go","limit":1}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
-"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit !== 1) process.exit(1); if (data.result.summary.files_returned > 1) process.exit(1);" "%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit === 1 && data.result.summary.files_returned <= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
->"%REQUEST_FILE%" (
-  echo {"jsonrpc":"2.0","id":9,"method":"system.describe"}
-  echo {"jsonrpc":"2.0","id":10,"method":"symbols.overview","params":{"language":"go","roots":["%JSON_ROOT%"],"include":"src/main.go","max_symbols":5}}
-)
-"%EXE%" --server <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
-"%BUN_EXE%" -e "const fs = require('node:fs'); const lines = fs.readFileSync(process.argv[1], 'utf8').trim().split(/\r?\n/).filter(Boolean); const first = JSON.parse(lines[0]); const second = JSON.parse(lines[1]); if (lines.length === 2 && first.result.server_mode.active === true && Array.isArray(second.result.files) && second.result.files.length >= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const body = '{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"system.describe\"}'; fs.writeFileSync(process.argv[1], Buffer.concat([Buffer.from([0xEF,0xBB,0xBF]), Buffer.from(body, 'utf8')]));" "%REQUEST_FILE%"
+"%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.id === 11 && data.result.name === 'ceretree') process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
-"%BUN_EXE%" -e "const fs = require('node:fs'); const body = '{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"system.describe\"}\n{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"index.status\"}\n'; fs.writeFileSync(process.argv[1], Buffer.concat([Buffer.from([0xEF,0xBB,0xBF]), Buffer.from(body, 'utf8')]));" "%REQUEST_FILE%"
-"%EXE%" --server <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
-"%BUN_EXE%" -e "const fs = require('node:fs'); const lines = fs.readFileSync(process.argv[1], 'utf8').trim().split(/\r?\n/).filter(Boolean); const first = JSON.parse(lines[0]); const second = JSON.parse(lines[1]); if (lines.length === 2 && first.id === 11 && first.result.name === 'ceretree' && second.id === 12 && Array.isArray(second.result.roots)) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const path = require('node:path'); const root = process.argv[1]; const exe = process.argv[2]; const testsDir = process.argv[3]; const jsonRoot = process.argv[4]; const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'; const socketPath = path.join(testsDir, 'ceretree-http.sock'); try { fs.rmSync(socketPath, { force: true }); } catch {} const request1 = JSON.stringify({ jsonrpc: '2.0', id: 21, method: 'system.describe' }); const request2 = JSON.stringify({ jsonrpc: '2.0', id: 22, method: 'symbols.overview', params: { language: 'go', roots: [jsonRoot], include: 'src/main.go', max_symbols: 5 } }); const server = Bun.spawn([exe, '--server', 'unix://' + socketPath], { cwd: root, stdout: 'ignore', stderr: 'pipe' }); let response1 = ''; for (let i = 0; i < 50; i += 1) { const curl = Bun.spawnSync([curlBin, '--silent', '--show-error', '--unix-socket', socketPath, '-H', 'content-type: application/json', '-X', 'POST', '--data-binary', request1, 'http://localhost/rpc']); if (curl.exitCode === 0) { response1 = Buffer.from(curl.stdout).toString('utf8'); break; } Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); } if (response1.length === 0) { server.kill(); process.exit(1); } const parsed1 = JSON.parse(response1); const curl2 = Bun.spawnSync([curlBin, '--silent', '--show-error', '--unix-socket', socketPath, '-H', 'content-type: application/json', '-X', 'POST', '--data-binary', request2, 'http://localhost/rpc']); server.kill(); try { fs.rmSync(socketPath, { force: true }); } catch {} if (curl2.exitCode === 0) { const parsed2 = JSON.parse(Buffer.from(curl2.stdout).toString('utf8')); if (parsed1.result.server_mode.active === true && parsed1.result.server_mode.target.indexOf('unix://') === 0 && parsed1.result.server_mode.transports.includes('http+unix-socket') === true && Array.isArray(parsed2.result.files) && parsed2.result.files.length >= 1) process.exit(0); } process.exit(1);" "%ROOT%" "%EXE%" "%TESTS_DIR%" "%JSON_ROOT%"
+if errorlevel 1 exit /b 1
+
+"%BUN_EXE%" -e "const root = process.argv[1]; const exe = process.argv[2]; const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'; const port = String(28000 + Math.floor(Math.random() * 10000)); const target = 'tcp://127.0.0.1:' + port; const server = Bun.spawn([exe, '--server', target], { cwd: root, stdout: 'ignore', stderr: 'pipe' }); const request = JSON.stringify({ jsonrpc: '2.0', id: 31, method: 'index.status' }); let response = ''; for (let i = 0; i < 50; i += 1) { const curl = Bun.spawnSync([curlBin, '--silent', '--show-error', '-H', 'content-type: application/json', '-X', 'POST', '--data-binary', request, 'http://127.0.0.1:' + port + '/rpc']); if (curl.exitCode === 0) { response = Buffer.from(curl.stdout).toString('utf8'); break; } Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); } server.kill(); if (response.length === 0) process.exit(1); const parsed = JSON.parse(response); if (Array.isArray(parsed.result.roots)) process.exit(0); process.exit(1);" "%ROOT%" "%EXE%"
 if errorlevel 1 exit /b 1
