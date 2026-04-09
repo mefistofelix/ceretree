@@ -25,6 +25,7 @@ set "TREE_SITTER_EXE=%ROOT%\build_cache\tools\tree-sitter-cli\bin\tree-sitter.ex
 set "TREE_SITTER_ZIP=%DOWNLOADS_DIR%\tree-sitter-cli-windows-x64.zip"
 set "WRAPPER_DIR=%ROOT%\build_cache\tool_wrappers"
 set "GRAMMAR_ROOT=%ROOT%\build_cache\grammars"
+set "GRAMMAR_STATE_DIR=%ROOT%\build_cache\grammar_state"
 set "GENERATED_DIR=%ROOT%\build_cache\generated"
 set "OBJ_DIR=%GENERATED_DIR%\obj"
 set "INC_DIR=%GENERATED_DIR%\include"
@@ -40,7 +41,7 @@ set "TARGET_GOARCH="
 set "TARGET_OUTPUT="
 set "TARGET_CGO_LDFLAGS="
 
-for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
+for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%GRAMMAR_STATE_DIR%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
   if not exist "%%~D" mkdir "%%~D"
 )
 
@@ -177,33 +178,95 @@ set "REVISION=%~3"
 set "LOCATION=%~4"
 set "NEEDS_BUN=%~5"
 set "REPO_DIR=%GRAMMAR_ROOT%\%LANGUAGE%\repo"
+set "STATE_DIR=%GRAMMAR_STATE_DIR%\%LANGUAGE%"
+set "FETCH_STAMP=%STATE_DIR%\fetch.txt"
+set "ROOT_BUN_STAMP=%STATE_DIR%\root_bun.txt"
+set "GRAMMAR_BUN_STAMP=%STATE_DIR%\grammar_bun.txt"
+set "GENERATE_STAMP=%STATE_DIR%\generate.txt"
+set "ARCHIVE_ZIP=%DOWNLOADS_DIR%\grammar_%LANGUAGE%.zip"
+set "ARCHIVE_TMP=%GRAMMAR_ROOT%\%LANGUAGE%\archive_tmp"
+set "REPO_SLUG="
+set "RESOLVED_REVISION=%REVISION%"
+set "DEFAULT_BRANCH="
 
-if not exist "%REPO_DIR%\.git" (
-  if exist "%REPO_DIR%" rmdir /s /q "%REPO_DIR%"
-  git clone --filter=blob:none --no-checkout "%REPO%" "%REPO_DIR%" || exit /b 1
+if not exist "%STATE_DIR%" mkdir "%STATE_DIR%" || exit /b 1
+
+set "REPO_SLUG=%REPO:https://github.com/=%"
+if "%REPO_SLUG:~-1%"=="/" set "REPO_SLUG=%REPO_SLUG:~0,-1%"
+if "%REVISION%"=="HEAD" (
+  for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!" --jq ".default_branch"`) do set "DEFAULT_BRANCH=%%A"
+  if not defined DEFAULT_BRANCH exit /b 1
+  for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!/commits/!DEFAULT_BRANCH!" --jq ".sha"`) do set "RESOLVED_REVISION=%%A"
+) else (
+  for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!/commits/!REVISION!" --jq ".sha"`) do set "RESOLVED_REVISION=%%A"
 )
+if not defined RESOLVED_REVISION exit /b 1
 
-git -C "%REPO_DIR%" fetch --depth 1 origin "%REVISION%" || exit /b 1
-git -C "%REPO_DIR%" checkout --force FETCH_HEAD || exit /b 1
+if not exist "%FETCH_STAMP%" goto :fetch_repo
+set /p FETCH_VALUE=<"%FETCH_STAMP%"
+if not "!FETCH_VALUE!"=="!RESOLVED_REVISION!" goto :fetch_repo
+if not exist "%REPO_DIR%" goto :fetch_repo
+goto :fetch_done
+
+:fetch_repo
+if exist "%ARCHIVE_TMP%" rmdir /s /q "%ARCHIVE_TMP%"
+mkdir "%ARCHIVE_TMP%" || exit /b 1
+curl.exe -fsSL "https://github.com/%REPO_SLUG%/archive/%RESOLVED_REVISION%.zip" -o "%ARCHIVE_ZIP%" || exit /b 1
+tar.exe -xf "%ARCHIVE_ZIP%" -C "%ARCHIVE_TMP%" || exit /b 1
+if exist "%REPO_DIR%" rmdir /s /q "%REPO_DIR%"
+for /d %%D in ("%ARCHIVE_TMP%\*") do (
+  move "%%~fD" "%REPO_DIR%" >nul || exit /b 1
+  goto :fetch_finish
+)
+exit /b 1
+
+:fetch_finish
+if exist "%ARCHIVE_TMP%" rmdir /s /q "%ARCHIVE_TMP%"
+>"%FETCH_STAMP%" echo !RESOLVED_REVISION!
+
+:fetch_done
 
 set "GRAMMAR_DIR=%REPO_DIR%"
 if not "%LOCATION%"=="." set "GRAMMAR_DIR=%REPO_DIR%\%LOCATION%"
+set "GENERATE_KEY=!RESOLVED_REVISION!^|%TREE_SITTER_VERSION%^|%LOCATION%^|%NEEDS_BUN%"
 
-if "%NEEDS_BUN%"=="1" if exist "%GRAMMAR_DIR%\package.json" (
+set "DO_GRAMMAR_BUN="
+if "%NEEDS_BUN%"=="1" if exist "%GRAMMAR_DIR%\package.json" set "DO_GRAMMAR_BUN=1"
+if defined DO_GRAMMAR_BUN if exist "%GRAMMAR_BUN_STAMP%" (
+  set /p GRAMMAR_BUN_VALUE=<"%GRAMMAR_BUN_STAMP%"
+  if "!GRAMMAR_BUN_VALUE!"=="!GENERATE_KEY!" set "DO_GRAMMAR_BUN="
+)
+if defined DO_GRAMMAR_BUN (
   pushd "%GRAMMAR_DIR%" || exit /b 1
   "%BUN_EXE%" install --ignore-scripts || exit /b 1
   popd
+  >"%GRAMMAR_BUN_STAMP%" <nul set /p "=!GENERATE_KEY!"
 )
 
-if "%NEEDS_BUN%"=="1" if exist "%REPO_DIR%\package.json" (
+set "DO_ROOT_BUN="
+if "%NEEDS_BUN%"=="1" if exist "%REPO_DIR%\package.json" set "DO_ROOT_BUN=1"
+if defined DO_ROOT_BUN if exist "%ROOT_BUN_STAMP%" (
+  set /p ROOT_BUN_VALUE=<"%ROOT_BUN_STAMP%"
+  if "!ROOT_BUN_VALUE!"=="!GENERATE_KEY!" set "DO_ROOT_BUN="
+)
+if defined DO_ROOT_BUN (
   pushd "%REPO_DIR%" || exit /b 1
   "%BUN_EXE%" install --ignore-scripts || exit /b 1
   popd
+  >"%ROOT_BUN_STAMP%" <nul set /p "=!GENERATE_KEY!"
 )
 
-pushd "%GRAMMAR_DIR%" || exit /b 1
-"%TREE_SITTER_EXE%" generate --js-runtime bun || exit /b 1
-popd
+set "DO_GENERATE=1"
+if exist "%GENERATE_STAMP%" if exist "%GRAMMAR_DIR%\src\parser.c" (
+  set /p GENERATE_VALUE=<"%GENERATE_STAMP%"
+  if "!GENERATE_VALUE!"=="!GENERATE_KEY!" set "DO_GENERATE="
+)
+if defined DO_GENERATE (
+  pushd "%GRAMMAR_DIR%" || exit /b 1
+  "%TREE_SITTER_EXE%" generate --js-runtime bun || exit /b 1
+  popd
+  >"%GENERATE_STAMP%" <nul set /p "=!GENERATE_KEY!"
+)
 
 if not exist "%GRAMMAR_DIR%\src\parser.c" exit /b 1
 

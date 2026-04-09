@@ -10,7 +10,7 @@ The current implementation provides:
 - persistent root registration in `bin/.ceretree-cache/state.json`
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary
-- build-time grammar regeneration on every build through `tree-sitter-cli`
+- incremental grammar regeneration through `tree-sitter-cli` only when the cached grammar inputs change
 - portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries
 
 Current supported grammars:
@@ -38,20 +38,26 @@ Current scope limits:
 
 ## Build architecture
 
-The build is intentionally self-bootstrapping and always regenerates grammar C sources before compiling the Go binary.
+The build is intentionally self-bootstrapping and incrementally reuses grammar work from `build_cache/` when the requested grammar revision and toolchain inputs have not changed.
 
 The pipeline is:
 
 1. bootstrap portable toolchains into `build_cache/`
-2. fetch grammar repositories from `GRAMMARS.txt`
+2. resolve each grammar ref from `GRAMMARS.txt` to a concrete GitHub commit and download a source snapshot archive
 3. install grammar-repo and grammar-local JS dependencies with Bun when required
    using `bun install --ignore-scripts` because grammar generation only needs package resolution, not native Node addon build hooks
-4. run `tree-sitter generate` for every grammar on every build
+4. run `tree-sitter generate` only when the cached grammar generation sentinel is stale
 5. compile generated `parser.c` plus optional `scanner.c` or `scanner.cc` with Zig
 6. build a local static grammar registry archive
 7. compile the final Go binary with `cgo` against that local archive
 
 This keeps the release binary self-contained while avoiding pre-generated grammar artifacts checked into the project.
+
+Grammar cache invalidation is driven by simple per-grammar sentinels under `build_cache/grammar_state/`:
+
+- source snapshot download is skipped when the resolved commit sentinel already matches
+- `bun install --ignore-scripts` is skipped when the Bun sentinel already matches the current grammar input key
+- `tree-sitter generate` is skipped when the generated C sentinel already matches and `src/parser.c` is present
 
 ## Tool bootstrap
 
@@ -90,11 +96,11 @@ Meaning:
 
 - `language`: RPC language id and generated registry key
 - `repo_url`: grammar repository
-- `revision`: git revision fetched during build, typically `HEAD` in the current floating setup
+- `revision`: git ref resolved during build to a concrete commit, typically `HEAD` in the current floating setup
 - `subdirectory`: grammar root inside the repository, `.` when the repo root is the grammar root
 - `needs_bun`: `1` when the grammar repo needs JS package installation before `tree-sitter generate`
 
-The current manifest intentionally uses floating `HEAD` revisions. This keeps grammar updates automatic, but it also means builds are not fully reproducible across different dates.
+The current manifest intentionally uses floating `HEAD` revisions. Each build resolves those refs to concrete commits, reuses the cached snapshot when the resolved commit is unchanged, and refreshes automatically when upstream moves.
 
 ## Build
 
