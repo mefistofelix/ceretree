@@ -49,29 +49,35 @@ if /i "%~1"=="linux" set "BUILD_MODE=linux"
 if /i "%~1"=="all" set "BUILD_MODE=all"
 if not "%~1"=="" if /i not "%~1"=="windows" if /i not "%~1"=="linux" if /i not "%~1"=="all" exit /b 1
 
+echo [ceretree] build mode: %BUILD_MODE%
+
 for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%GRAMMAR_STATE_DIR%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
   if not exist "%%~D" mkdir "%%~D"
 )
 
 if not exist "%GO_EXE%" (
+  echo [ceretree] bootstrap go %GO_VERSION%
   curl.exe -fsSL "https://go.dev/dl/go%GO_VERSION%.windows-amd64.zip" -o "%GO_ZIP%" || goto :fail
   if exist "%GO_DIR%" rmdir /s /q "%GO_DIR%"
   tar.exe -xf "%GO_ZIP%" -C "%TOOLCHAINS_DIR%" || goto :fail
 )
 
 if not exist "%ZIG_EXE%" (
+  echo [ceretree] bootstrap zig %ZIG_VERSION%
   curl.exe -fsSL "https://ziglang.org/download/%ZIG_VERSION%/zig-x86_64-windows-%ZIG_VERSION%.zip" -o "%ZIG_ZIP%" || goto :fail
   if exist "%ZIG_DIR%" rmdir /s /q "%ZIG_DIR%"
   tar.exe -xf "%ZIG_ZIP%" -C "%TOOLCHAINS_DIR%" || goto :fail
 )
 
 if not exist "%BUN_EXE%" (
+  echo [ceretree] bootstrap bun %BUN_VERSION%
   gh release download "%BUN_VERSION%" -R oven-sh/bun -p "bun-windows-x64.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
   if exist "%BUN_DIR%" rmdir /s /q "%BUN_DIR%"
   tar.exe -xf "%BUN_ZIP%" -C "%TOOLCHAINS_DIR%" || goto :fail
 )
 
 if not exist "%TREE_SITTER_EXE%" (
+  echo [ceretree] bootstrap tree-sitter-cli %TREE_SITTER_VERSION%
   gh release download "%TREE_SITTER_VERSION%" -R tree-sitter/tree-sitter -p "tree-sitter-cli-windows-x64.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
   if exist "%ROOT%\build_cache\tools\tree-sitter-cli" rmdir /s /q "%ROOT%\build_cache\tools\tree-sitter-cli"
   mkdir "%ROOT%\build_cache\tools\tree-sitter-cli\bin" || goto :fail
@@ -140,6 +146,8 @@ set "TARGET_OBJ_DIR=%OBJ_DIR%\%TARGET_NAME%"
 set "TARGET_LIB_FILE=%LIB_DIR%\ceretree_grammars_%TARGET_NAME%.a"
 set "OBJECTS="
 
+echo [ceretree] target %TARGET_NAME% start
+
 if not exist "%TARGET_OBJ_DIR%" mkdir "%TARGET_OBJ_DIR%" || exit /b 1
 
 call "%TARGET_CC%" -c -O2 "-I%INC_DIR%" "%SRC_DIR%\ceretree_grammars.c" "-o%TARGET_OBJ_DIR%\ceretree_grammars.o" || exit /b 1
@@ -159,6 +167,7 @@ set "CGO_CFLAGS=-I%INC_DIR%"
 set "CGO_LDFLAGS=%TARGET_LIB_FILE% %TARGET_EXTRA_LDFLAGS%"
 
 "%GO_EXE%" build -o "%TARGET_OUTPUT%" ./src || exit /b 1
+echo [ceretree] target %TARGET_NAME% done
 exit /b 0
 
 :compile_grammar_objects
@@ -187,6 +196,7 @@ if exist "%PARSER_STAMP%" if exist "%PARSER_OBJ%" (
   if "!PARSER_VALUE!"=="!OBJECT_KEY!" set "DO_PARSER="
 )
 if defined DO_PARSER (
+  echo [ceretree] %TARGET_NAME% compile %LANGUAGE% parser.c
   call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\parser.c" "-o%PARSER_OBJ%" || exit /b 1
   >"%PARSER_STAMP%" <nul set /p "=!OBJECT_KEY!"
 )
@@ -199,6 +209,7 @@ if exist "%GRAMMAR_DIR%\src\scanner.c" (
     if "!SCANNER_VALUE!"=="!OBJECT_KEY!" set "DO_SCANNER="
   )
   if defined DO_SCANNER (
+    echo [ceretree] %TARGET_NAME% compile %LANGUAGE% scanner.c
     call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.c" "-o%SCANNER_OBJ%" || exit /b 1
     >"%SCANNER_STAMP%" <nul set /p "=!OBJECT_KEY!"
   )
@@ -216,6 +227,7 @@ if exist "%GRAMMAR_DIR%\src\scanner.cc" (
     if "!SCANNER_CC_VALUE!"=="!OBJECT_KEY!" set "DO_SCANNER_CC="
   )
   if defined DO_SCANNER_CC (
+    echo [ceretree] %TARGET_NAME% compile %LANGUAGE% scanner.cc
     call "%TARGET_CXX%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.cc" "-o%SCANNER_CC_OBJ%" || exit /b 1
     >"%SCANNER_CC_STAMP%" <nul set /p "=!OBJECT_KEY!"
   )
@@ -250,6 +262,7 @@ if not exist "%STATE_DIR%" mkdir "%STATE_DIR%" || exit /b 1
 
 set "REPO_SLUG=%REPO:https://github.com/=%"
 if "%REPO_SLUG:~-1%"=="/" set "REPO_SLUG=%REPO_SLUG:~0,-1%"
+echo [ceretree] grammar %LANGUAGE% resolve ref
 if "%REVISION%"=="HEAD" (
   for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!" --jq ".default_branch"`) do set "DEFAULT_BRANCH=%%A"
   if not defined DEFAULT_BRANCH exit /b 1
@@ -266,6 +279,7 @@ if not exist "%REPO_DIR%" goto :fetch_repo
 goto :fetch_done
 
 :fetch_repo
+echo [ceretree] grammar %LANGUAGE% download snapshot
 if exist "%ARCHIVE_TMP%" rmdir /s /q "%ARCHIVE_TMP%"
 mkdir "%ARCHIVE_TMP%" || exit /b 1
 curl.exe -fsSL "https://github.com/%REPO_SLUG%/archive/%RESOLVED_REVISION%.zip" -o "%ARCHIVE_ZIP%" || exit /b 1
@@ -294,6 +308,7 @@ if defined DO_GRAMMAR_BUN if exist "%GRAMMAR_BUN_STAMP%" (
   if "!GRAMMAR_BUN_VALUE!"=="!GENERATE_KEY!" set "DO_GRAMMAR_BUN="
 )
 if defined DO_GRAMMAR_BUN (
+  echo [ceretree] grammar %LANGUAGE% bun install ^(subdir^)
   pushd "%GRAMMAR_DIR%" || exit /b 1
   "%BUN_EXE%" install --ignore-scripts || exit /b 1
   popd
@@ -307,6 +322,7 @@ if defined DO_ROOT_BUN if exist "%ROOT_BUN_STAMP%" (
   if "!ROOT_BUN_VALUE!"=="!GENERATE_KEY!" set "DO_ROOT_BUN="
 )
 if defined DO_ROOT_BUN (
+  echo [ceretree] grammar %LANGUAGE% bun install ^(repo root^)
   pushd "%REPO_DIR%" || exit /b 1
   "%BUN_EXE%" install --ignore-scripts || exit /b 1
   popd
@@ -319,6 +335,7 @@ if exist "%GENERATE_STAMP%" if exist "%GRAMMAR_DIR%\src\parser.c" (
   if "!GENERATE_VALUE!"=="!GENERATE_KEY!" set "DO_GENERATE="
 )
 if defined DO_GENERATE (
+  echo [ceretree] grammar %LANGUAGE% tree-sitter generate
   pushd "%GRAMMAR_DIR%" || exit /b 1
   "%TREE_SITTER_EXE%" generate --js-runtime bun || exit /b 1
   popd

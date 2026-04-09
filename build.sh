@@ -31,15 +31,19 @@ if [ "$BUILD_MODE" != "linux" ] && [ "$BUILD_MODE" != "windows" ] && [ "$BUILD_M
   exit 1
 fi
 
+echo "[ceretree] build mode: $BUILD_MODE"
+
 mkdir -p "$ROOT/build_cache/downloads" "$ROOT/build_cache/toolchains" "$ROOT/bin" "$ROOT/build_cache/gopath" "$ROOT/build_cache/gocache" "$WRAPPER_DIR" "$GRAMMAR_STATE_DIR" "$OBJ_DIR" "$INC_DIR" "$SRC_DIR" "$LIB_DIR" "$GRAMMAR_ROOT"
 
 if [ ! -x "$GO_BIN" ]; then
+  echo "[ceretree] bootstrap go $GO_VERSION"
   curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o "$GO_ARCHIVE"
   rm -rf "$GO_DIR"
   tar -C "$ROOT/build_cache/toolchains" -xzf "$GO_ARCHIVE"
 fi
 
 if [ ! -x "$ZIG_BIN" ]; then
+  echo "[ceretree] bootstrap zig $ZIG_VERSION"
   curl -fsSL "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz" -o "$ZIG_ARCHIVE"
   rm -rf "$ZIG_DIR"
   tar -C "$ROOT/build_cache/toolchains" -xJf "$ZIG_ARCHIVE"
@@ -47,12 +51,14 @@ if [ ! -x "$ZIG_BIN" ]; then
 fi
 
 if [ ! -x "$BUN_BIN" ]; then
+  echo "[ceretree] bootstrap bun $BUN_VERSION"
   curl -fsSL "https://github.com/oven-sh/bun/releases/download/$BUN_VERSION/bun-linux-x64.zip" -o "$BUN_ARCHIVE"
   rm -rf "$BUN_DIR"
   unzip -qo "$BUN_ARCHIVE" -d "$ROOT/build_cache/toolchains"
 fi
 
 if [ ! -x "$TREE_SITTER_BIN" ]; then
+  echo "[ceretree] bootstrap tree-sitter-cli $TREE_SITTER_VERSION"
   curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/$TREE_SITTER_VERSION/tree-sitter-cli-linux-x64.zip" -o "$TREE_SITTER_ARCHIVE"
   rm -rf "$ROOT/build_cache/tools/tree-sitter-cli"
   mkdir -p "$ROOT/build_cache/tools/tree-sitter-cli/bin"
@@ -104,6 +110,7 @@ EOF
 
 while IFS='|' read -r language repo revision location needs_npm; do
   [ -n "$language" ] || continue
+  echo "[ceretree] grammar $language resolve ref"
   repo_dir="$GRAMMAR_ROOT/$language/repo"
   state_dir="$GRAMMAR_STATE_DIR/$language"
   fetch_stamp="$state_dir/fetch.txt"
@@ -127,6 +134,7 @@ while IFS='|' read -r language repo revision location needs_npm; do
   [ -n "$resolved_revision" ] || exit 1
 
   if [ ! -f "$fetch_stamp" ] || [ "$(cat "$fetch_stamp")" != "$resolved_revision" ] || [ ! -d "$repo_dir" ]; then
+    echo "[ceretree] grammar $language download snapshot"
     rm -rf "$archive_tmp" "$repo_dir"
     mkdir -p "$archive_tmp"
     curl -fsSL "https://github.com/$repo_slug/archive/$resolved_revision.zip" -o "$archive_zip"
@@ -146,6 +154,7 @@ while IFS='|' read -r language repo revision location needs_npm; do
 
   if [ "$needs_npm" = "1" ] && [ -f "$grammar_dir/package.json" ]; then
     if [ ! -f "$grammar_bun_stamp" ] || [ "$(cat "$grammar_bun_stamp")" != "$generate_key" ]; then
+      echo "[ceretree] grammar $language bun install (subdir)"
       (cd "$grammar_dir" && "$BUN_BIN" install --ignore-scripts)
       printf '%s' "$generate_key" >"$grammar_bun_stamp"
     fi
@@ -153,12 +162,14 @@ while IFS='|' read -r language repo revision location needs_npm; do
 
   if [ "$needs_npm" = "1" ] && [ -f "$repo_dir/package.json" ]; then
     if [ ! -f "$root_bun_stamp" ] || [ "$(cat "$root_bun_stamp")" != "$generate_key" ]; then
+      echo "[ceretree] grammar $language bun install (repo root)"
       (cd "$repo_dir" && "$BUN_BIN" install --ignore-scripts)
       printf '%s' "$generate_key" >"$root_bun_stamp"
     fi
   fi
 
   if [ ! -f "$generate_stamp" ] || [ ! -f "$grammar_dir/src/parser.c" ] || [ "$(cat "$generate_stamp")" != "$generate_key" ]; then
+    echo "[ceretree] grammar $language tree-sitter generate"
     (cd "$grammar_dir" && "$TREE_SITTER_BIN" generate --js-runtime bun)
     printf '%s' "$generate_key" >"$generate_stamp"
   fi
@@ -193,6 +204,7 @@ EOF
 "$GOROOT/bin/gofmt" -w "$ROOT/src/main.go"
 
 if [ "$BUILD_MODE" = "linux" ] || [ "$BUILD_MODE" = "all" ]; then
+  echo "[ceretree] target linux start"
   target_obj_dir="$OBJ_DIR/linux"
   target_lib="$LIB_DIR/libceretree_grammars_linux.a"
   rm -rf "$target_obj_dir"
@@ -204,14 +216,17 @@ if [ "$BUILD_MODE" = "linux" ] || [ "$BUILD_MODE" = "all" ]; then
     if [ "$location" != "." ]; then
       grammar_dir="$grammar_dir/$location"
     fi
+    echo "[ceretree] linux compile $language parser.c"
     "$WRAPPER_DIR/zig-cc-linux.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/parser.c" -o "$target_obj_dir/${language}_parser.o"
     if [ -f "$grammar_dir/src/scanner.c" ]; then
+      echo "[ceretree] linux compile $language scanner.c"
       "$WRAPPER_DIR/zig-cc-linux.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/scanner.c" -o "$target_obj_dir/${language}_scanner.o"
     fi
     if [ ! -f "$grammar_dir/src/scanner.c" ]; then
       rm -f "$target_obj_dir/${language}_scanner.o"
     fi
     if [ -f "$grammar_dir/src/scanner.cc" ]; then
+      echo "[ceretree] linux compile $language scanner.cc"
       "$WRAPPER_DIR/zig-cxx-linux.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/scanner.cc" -o "$target_obj_dir/${language}_scanner_cc.o"
     fi
     if [ ! -f "$grammar_dir/src/scanner.cc" ]; then
@@ -220,9 +235,11 @@ if [ "$BUILD_MODE" = "linux" ] || [ "$BUILD_MODE" = "all" ]; then
   done <"$ROOT/src/GRAMMARS.txt"
   "$ZIG_BIN" ar rcs "$target_lib" "$target_obj_dir"/*.o
   CGO_CFLAGS="-I$INC_DIR" CGO_LDFLAGS="$target_lib -static" CC="$WRAPPER_DIR/zig-cc-linux.sh" CXX="$WRAPPER_DIR/zig-cxx-linux.sh" GOOS=linux GOARCH=amd64 "$GO_BIN" build -o "$ROOT/bin/ceretree" ./src
+  echo "[ceretree] target linux done"
 fi
 
 if [ "$BUILD_MODE" = "windows" ] || [ "$BUILD_MODE" = "all" ]; then
+  echo "[ceretree] target windows start"
   target_obj_dir="$OBJ_DIR/windows"
   target_lib="$LIB_DIR/libceretree_grammars_windows.a"
   rm -rf "$target_obj_dir"
@@ -234,14 +251,17 @@ if [ "$BUILD_MODE" = "windows" ] || [ "$BUILD_MODE" = "all" ]; then
     if [ "$location" != "." ]; then
       grammar_dir="$grammar_dir/$location"
     fi
+    echo "[ceretree] windows compile $language parser.c"
     "$WRAPPER_DIR/zig-cc-windows.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/parser.c" -o "$target_obj_dir/${language}_parser.o"
     if [ -f "$grammar_dir/src/scanner.c" ]; then
+      echo "[ceretree] windows compile $language scanner.c"
       "$WRAPPER_DIR/zig-cc-windows.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/scanner.c" -o "$target_obj_dir/${language}_scanner.o"
     fi
     if [ ! -f "$grammar_dir/src/scanner.c" ]; then
       rm -f "$target_obj_dir/${language}_scanner.o"
     fi
     if [ -f "$grammar_dir/src/scanner.cc" ]; then
+      echo "[ceretree] windows compile $language scanner.cc"
       "$WRAPPER_DIR/zig-cxx-windows.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/scanner.cc" -o "$target_obj_dir/${language}_scanner_cc.o"
     fi
     if [ ! -f "$grammar_dir/src/scanner.cc" ]; then
@@ -250,4 +270,5 @@ if [ "$BUILD_MODE" = "windows" ] || [ "$BUILD_MODE" = "all" ]; then
   done <"$ROOT/src/GRAMMARS.txt"
   "$ZIG_BIN" ar rcs "$target_lib" "$target_obj_dir"/*.o
   CGO_CFLAGS="-I$INC_DIR" CGO_LDFLAGS="$target_lib" CC="$WRAPPER_DIR/zig-cc-windows.sh" CXX="$WRAPPER_DIR/zig-cxx-windows.sh" GOOS=windows GOARCH=amd64 "$GO_BIN" build -o "$ROOT/bin/ceretree.exe" ./src
+  echo "[ceretree] target windows done"
 fi

@@ -24,9 +24,9 @@ jobs:
       - run: chmod +x build.sh
       - run: ./build.sh all
       - run: mkdir -p dist
-      - run: tar -czf dist/ceretree-linux-x64.tar.gz -C bin ceretree
-      - run: zip -j dist/ceretree-windows-x64.zip bin/ceretree.exe
+      - run: cp bin/ceretree dist/ceretree-linux-x64
+      - run: cp bin/ceretree.exe dist/ceretree-windows-x64.exe
       - run: git tag -f edge
       - run: git push origin refs/tags/edge --force
       - run: gh release view edge >/dev/null 2>&1 || gh release create edge --title edge --notes "Automated rolling prerelease from ci." --prerelease --latest=false || gh release view edge >/dev/null 2>&1
-      - run: gh release upload edge dist/ceretree-linux-x64.tar.gz dist/ceretree-windows-x64.zip --clobber
+      - run: gh release upload edge dist/ceretree-linux-x64 dist/ceretree-windows-x64.exe --clobber
