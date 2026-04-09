@@ -98,6 +98,10 @@
 - dont use complex shell scripts structure follow CODE_STYLE.md also in this case but keep the code linear
   no labels for bat no functions for powershell bash etc, linear code from to to bottom
 - you must remember that powershell does not support multiple commands on the same line via cmd1 && cmd2
+- when using `functions.shell_command` in this environment, `XAgent` MUST assume the shell is PowerShell and MUST write commands with PowerShell syntax, not `cmd.exe` syntax and not POSIX shell syntax
+- in PowerShell `XAgent` MUST NOT use `&&` or `||` as command separators; `XAgent` MUST split commands into separate tool calls or use PowerShell-native control flow only when really needed
+- in PowerShell `XAgent` MUST NOT assume quoting, variable expansion, redirection, or path escaping behave like `cmd.exe` or bash; `XAgent` MUST write commands that are valid PowerShell commands as written
+- if a command is intended for `cmd.exe` or bash specifically, `XAgent` MUST invoke that shell explicitly instead of assuming PowerShell will interpret it correctly
 - the test script should not call build script
 - if crosscompilation is possible for the project use only linux runners and reate release artifacts for boh platforms
 
