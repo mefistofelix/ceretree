@@ -24,7 +24,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 var supported_languages = []string{
 	"bash",
@@ -95,6 +95,39 @@ type symbols_overview_params struct {
 	MaxSymbols int             `json:"max_symbols"`
 }
 
+type symbols_find_params struct {
+	Language   string          `json:"language"`
+	Name       string          `json:"name"`
+	Kinds      []string        `json:"kinds"`
+	Roots      []string        `json:"roots"`
+	Include    json.RawMessage `json:"include"`
+	Exclude    json.RawMessage `json:"exclude"`
+	MatchMode  string          `json:"match_mode"`
+	MaxSymbols int             `json:"max_symbols"`
+}
+
+type calls_find_params struct {
+	Language  string          `json:"language"`
+	Callee    string          `json:"callee"`
+	Roots     []string        `json:"roots"`
+	Include   json.RawMessage `json:"include"`
+	Exclude   json.RawMessage `json:"exclude"`
+	MatchMode string          `json:"match_mode"`
+	MaxCalls  int             `json:"max_calls"`
+}
+
+type query_common_params struct {
+	Language  string          `json:"language"`
+	Preset    string          `json:"preset"`
+	Name      string          `json:"name"`
+	Kinds     []string        `json:"kinds"`
+	Roots     []string        `json:"roots"`
+	Include   json.RawMessage `json:"include"`
+	Exclude   json.RawMessage `json:"exclude"`
+	MatchMode string          `json:"match_mode"`
+	MaxItems  int             `json:"max_items"`
+}
+
 type file_match struct {
 	Path     string          `json:"path"`
 	Root     string          `json:"root"`
@@ -129,6 +162,23 @@ type symbol_overview struct {
 	EndByte     uint       `json:"end_byte"`
 	Start       point_json `json:"start"`
 	End         point_json `json:"end"`
+}
+
+type call_file struct {
+	Path     string       `json:"path"`
+	Root     string       `json:"root"`
+	Relative string       `json:"relative"`
+	Calls    []call_match `json:"calls"`
+}
+
+type call_match struct {
+	Callee     string     `json:"callee"`
+	Expression string     `json:"expression"`
+	Kind       string     `json:"kind"`
+	StartByte  uint       `json:"start_byte"`
+	EndByte    uint       `json:"end_byte"`
+	Start      point_json `json:"start"`
+	End        point_json `json:"end"`
 }
 
 type point_json struct {
@@ -285,7 +335,10 @@ func dispatch(context *runtime_context, request *rpc_request) (any, error) {
 		"roots.add":        handle_roots_add,
 		"roots.remove":     handle_roots_remove,
 		"query":            handle_query,
+		"query.common":     handle_query_common,
+		"symbols.find":     handle_symbols_find,
 		"symbols.overview": handle_symbols_overview,
+		"calls.find":       handle_calls_find,
 	}
 
 	handler, ok := handlers[request.Method]
@@ -346,7 +399,10 @@ func handle_system_describe(context *runtime_context, _ json.RawMessage) (any, e
 			"roots.add",
 			"roots.remove",
 			"query",
+			"query.common",
+			"symbols.find",
 			"symbols.overview",
+			"calls.find",
 		},
 	}, nil
 }
@@ -608,6 +664,204 @@ func handle_symbols_overview(context *runtime_context, params json.RawMessage) (
 		},
 		"files": files,
 	}, nil
+}
+
+func handle_symbols_find(context *runtime_context, params json.RawMessage) (any, error) {
+	var parsed symbols_find_params
+	if err := json.Unmarshal(non_nil_params(params), &parsed); err != nil {
+		return nil, invalid_params("symbols.find params must be an object")
+	}
+
+	if strings.TrimSpace(parsed.Language) == "" {
+		return nil, invalid_params("language is required")
+	}
+
+	language, err := linked_language(parsed.Language)
+	if err != nil {
+		return nil, err
+	}
+
+	parser := tree_sitter.NewParser()
+	defer parser.Close()
+
+	if err := parser.SetLanguage(language); err != nil {
+		return nil, err
+	}
+
+	roots, include_patterns, exclude_patterns, err := decode_search_scope(context, parsed.Roots, parsed.Include, parsed.Exclude)
+	if err != nil {
+		return nil, err
+	}
+
+	started := time.Now().UTC()
+	max_symbols := parsed.MaxSymbols
+	if max_symbols <= 0 {
+		max_symbols = 200
+	}
+
+	var files []symbol_file
+	var files_scanned int
+	var total_symbols int
+
+	for _, root := range roots {
+		root_files, scanned, _, err := overview_root(root, include_patterns, exclude_patterns, parser, max_symbols-total_symbols)
+		if err != nil {
+			return nil, err
+		}
+		files_scanned += scanned
+		for _, file := range root_files {
+			filtered := filter_symbols(file.Symbols, parsed.Name, parsed.Kinds, parsed.MatchMode, max_symbols-total_symbols)
+			if len(filtered) == 0 {
+				continue
+			}
+			files = append(files, symbol_file{
+				Path:     file.Path,
+				Root:     file.Root,
+				Relative: file.Relative,
+				Symbols:  filtered,
+			})
+			total_symbols += len(filtered)
+			if total_symbols >= max_symbols {
+				break
+			}
+		}
+		if total_symbols >= max_symbols {
+			break
+		}
+	}
+
+	return map[string]any{
+		"roots": roots,
+		"summary": map[string]any{
+			"language":       parsed.Language,
+			"files_scanned":  files_scanned,
+			"files_reported": len(files),
+			"symbols":        total_symbols,
+			"match_mode":     normalize_match_mode(parsed.MatchMode),
+			"started_at":     started.Format(time.RFC3339Nano),
+			"duration_ms":    time.Since(started).Milliseconds(),
+		},
+		"files": files,
+	}, nil
+}
+
+func handle_calls_find(context *runtime_context, params json.RawMessage) (any, error) {
+	var parsed calls_find_params
+	if err := json.Unmarshal(non_nil_params(params), &parsed); err != nil {
+		return nil, invalid_params("calls.find params must be an object")
+	}
+
+	if strings.TrimSpace(parsed.Language) == "" {
+		return nil, invalid_params("language is required")
+	}
+	if strings.TrimSpace(parsed.Callee) == "" {
+		return nil, invalid_params("callee is required")
+	}
+
+	language, err := linked_language(parsed.Language)
+	if err != nil {
+		return nil, err
+	}
+
+	parser := tree_sitter.NewParser()
+	defer parser.Close()
+
+	if err := parser.SetLanguage(language); err != nil {
+		return nil, err
+	}
+
+	roots, include_patterns, exclude_patterns, err := decode_search_scope(context, parsed.Roots, parsed.Include, parsed.Exclude)
+	if err != nil {
+		return nil, err
+	}
+
+	started := time.Now().UTC()
+	max_calls := parsed.MaxCalls
+	if max_calls <= 0 {
+		max_calls = 200
+	}
+
+	var files []call_file
+	var files_scanned int
+	var total_calls int
+
+	for _, root := range roots {
+		root_files, scanned, calls_found, err := calls_root(root, include_patterns, exclude_patterns, parser, parsed.Callee, parsed.MatchMode, max_calls-total_calls)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, root_files...)
+		files_scanned += scanned
+		total_calls += calls_found
+		if total_calls >= max_calls {
+			break
+		}
+	}
+
+	return map[string]any{
+		"roots": roots,
+		"summary": map[string]any{
+			"language":       parsed.Language,
+			"files_scanned":  files_scanned,
+			"files_reported": len(files),
+			"calls":          total_calls,
+			"match_mode":     normalize_match_mode(parsed.MatchMode),
+			"started_at":     started.Format(time.RFC3339Nano),
+			"duration_ms":    time.Since(started).Milliseconds(),
+		},
+		"files": files,
+	}, nil
+}
+
+func handle_query_common(context *runtime_context, params json.RawMessage) (any, error) {
+	var parsed query_common_params
+	if err := json.Unmarshal(non_nil_params(params), &parsed); err != nil {
+		return nil, invalid_params("query.common params must be an object")
+	}
+
+	if strings.TrimSpace(parsed.Language) == "" {
+		return nil, invalid_params("language is required")
+	}
+	if strings.TrimSpace(parsed.Preset) == "" {
+		return nil, invalid_params("preset is required")
+	}
+
+	switch parsed.Preset {
+	case "functions.by_name":
+		return handle_symbols_find(context, must_json(params_from_map(map[string]any{
+			"language":    parsed.Language,
+			"name":        parsed.Name,
+			"kinds":       append([]string{}, append(parsed.Kinds, "function", "method")...),
+			"roots":       parsed.Roots,
+			"include":     parsed.Include,
+			"exclude":     parsed.Exclude,
+			"match_mode":  parsed.MatchMode,
+			"max_symbols": parsed.MaxItems,
+		})))
+	case "types.by_name":
+		return handle_symbols_find(context, must_json(params_from_map(map[string]any{
+			"language":    parsed.Language,
+			"name":        parsed.Name,
+			"kinds":       append([]string{}, append(parsed.Kinds, "type", "class", "interface", "struct", "trait", "enum", "module", "impl")...),
+			"roots":       parsed.Roots,
+			"include":     parsed.Include,
+			"exclude":     parsed.Exclude,
+			"match_mode":  parsed.MatchMode,
+			"max_symbols": parsed.MaxItems,
+		})))
+	case "calls.by_name":
+		return handle_calls_find(context, must_json(params_from_map(map[string]any{
+			"language":   parsed.Language,
+			"callee":     parsed.Name,
+			"roots":      parsed.Roots,
+			"include":    parsed.Include,
+			"exclude":    parsed.Exclude,
+			"match_mode": parsed.MatchMode,
+			"max_calls":  parsed.MaxItems,
+		})))
+	default:
+		return nil, invalid_params(fmt.Sprintf("unsupported preset: %s", parsed.Preset))
+	}
 }
 
 func linked_language(name string) (*tree_sitter.Language, error) {
@@ -934,6 +1188,91 @@ func overview_file(
 	}, nil
 }
 
+func calls_root(
+	root string,
+	include_patterns []string,
+	exclude_patterns []string,
+	parser *tree_sitter.Parser,
+	callee string,
+	match_mode string,
+	remaining_calls int,
+) ([]call_file, int, int, error) {
+	var files []call_file
+	var files_scanned int
+	var total_calls int
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walk_err error) error {
+		if walk_err != nil {
+			return walk_err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+
+		if !matches_any(relative, include_patterns, true) || matches_any(relative, exclude_patterns, false) {
+			return nil
+		}
+
+		if total_calls >= remaining_calls {
+			return io.EOF
+		}
+
+		files_scanned++
+		file_calls, err := calls_file(path, root, relative, parser, callee, match_mode, remaining_calls-total_calls)
+		if err != nil {
+			return err
+		}
+		if len(file_calls.Calls) > 0 {
+			files = append(files, file_calls)
+			total_calls += len(file_calls.Calls)
+		}
+		return nil
+	})
+
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+
+	return files, files_scanned, total_calls, err
+}
+
+func calls_file(
+	path string,
+	root string,
+	relative string,
+	parser *tree_sitter.Parser,
+	callee string,
+	match_mode string,
+	remaining_calls int,
+) (call_file, error) {
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return call_file{}, err
+	}
+
+	tree := parser.Parse(source, nil)
+	if tree == nil {
+		return call_file{}, fmt.Errorf("tree-sitter parse failed for %s", path)
+	}
+	defer tree.Close()
+
+	var calls []call_match
+	collect_calls(source, tree.RootNode(), callee, normalize_match_mode(match_mode), remaining_calls, &calls)
+
+	return call_file{
+		Path:     path,
+		Root:     root,
+		Relative: relative,
+		Calls:    calls,
+	}, nil
+}
+
 func collect_symbols(
 	source []byte,
 	node *tree_sitter.Node,
@@ -973,6 +1312,41 @@ func collect_symbols(
 	}
 }
 
+func collect_calls(
+	source []byte,
+	node *tree_sitter.Node,
+	callee string,
+	match_mode string,
+	remaining_calls int,
+	calls *[]call_match,
+) {
+	if node == nil || len(*calls) >= remaining_calls {
+		return
+	}
+
+	if is_call_kind(node.GrammarName()) {
+		target_text := call_target_text(node, source)
+		if matches_text(target_text, callee, match_mode) {
+			*calls = append(*calls, call_match{
+				Callee:     target_text,
+				Expression: symbol_signature(node, source),
+				Kind:       node.GrammarName(),
+				StartByte:  node.StartByte(),
+				EndByte:    node.EndByte(),
+				Start:      point_from_tree(node.StartPosition()),
+				End:        point_from_tree(node.EndPosition()),
+			})
+		}
+	}
+
+	for index := uint(0); index < node.NamedChildCount(); index++ {
+		collect_calls(source, node.NamedChild(index), callee, match_mode, remaining_calls, calls)
+		if len(*calls) >= remaining_calls {
+			return
+		}
+	}
+}
+
 func symbol_category(kind string) string {
 	switch kind {
 	case "package_clause", "namespace_definition":
@@ -997,6 +1371,32 @@ func symbol_category(kind string) string {
 		return "impl"
 	case "module", "module_definition", "module_declaration", "mod_item", "namespace_name":
 		return "module"
+	}
+
+	return ""
+}
+
+func is_call_kind(kind string) bool {
+	switch kind {
+	case "call_expression", "call", "invocation_expression":
+		return true
+	}
+	return false
+}
+
+func call_target_text(node *tree_sitter.Node, source []byte) string {
+	for _, field_name := range []string{"function", "name", "call", "callee"} {
+		if child := node.ChildByFieldName(field_name); child != nil {
+			if text := compact_text(child.Utf8Text(source)); text != "" {
+				return text
+			}
+		}
+	}
+
+	if node.NamedChildCount() > 0 {
+		if child := node.NamedChild(0); child != nil {
+			return compact_text(child.Utf8Text(source))
+		}
 	}
 
 	return ""
@@ -1050,7 +1450,7 @@ func is_identifier_kind(kind string) bool {
 }
 
 func symbol_signature(node *tree_sitter.Node, source []byte) string {
-	text := strings.TrimSpace(node.Utf8Text(source))
+	text := compact_text(node.Utf8Text(source))
 	if text == "" {
 		return ""
 	}
@@ -1065,6 +1465,121 @@ func symbol_signature(node *tree_sitter.Node, source []byte) string {
 	}
 
 	return text
+}
+
+func compact_text(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+func filter_symbols(
+	symbols []symbol_overview,
+	name string,
+	kinds []string,
+	match_mode string,
+	remaining int,
+) []symbol_overview {
+	allowed_kinds := map[string]struct{}{}
+	for _, kind := range kinds {
+		if trimmed := strings.TrimSpace(kind); trimmed != "" {
+			allowed_kinds[strings.ToLower(trimmed)] = struct{}{}
+		}
+	}
+
+	filtered := make([]symbol_overview, 0, len(symbols))
+	for _, symbol := range symbols {
+		if len(allowed_kinds) > 0 {
+			if _, ok := allowed_kinds[strings.ToLower(symbol.Kind)]; !ok {
+				continue
+			}
+		}
+		if !matches_text(symbol.Name, name, normalize_match_mode(match_mode)) {
+			continue
+		}
+		filtered = append(filtered, symbol)
+		if len(filtered) >= remaining {
+			break
+		}
+	}
+
+	return filtered
+}
+
+func normalize_match_mode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "exact":
+		return "exact"
+	case "contains", "prefix", "suffix", "regex":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "exact"
+	}
+}
+
+func matches_text(value string, needle string, match_mode string) bool {
+	if strings.TrimSpace(needle) == "" {
+		return true
+	}
+
+	value = strings.TrimSpace(value)
+	needle = strings.TrimSpace(needle)
+
+	switch normalize_match_mode(match_mode) {
+	case "contains":
+		return strings.Contains(value, needle)
+	case "prefix":
+		return strings.HasPrefix(value, needle)
+	case "suffix":
+		return strings.HasSuffix(value, needle)
+	case "regex":
+		regex, err := regexp.Compile(needle)
+		if err != nil {
+			return false
+		}
+		return regex.MatchString(value)
+	default:
+		return value == needle
+	}
+}
+
+func params_from_map(values map[string]any) map[string]any {
+	params := map[string]any{}
+	for key, value := range values {
+		switch typed := value.(type) {
+		case json.RawMessage:
+			if len(typed) == 0 {
+				continue
+			}
+			params[key] = json.RawMessage(typed)
+		case []string:
+			if len(typed) == 0 {
+				continue
+			}
+			params[key] = typed
+		case string:
+			if strings.TrimSpace(typed) == "" {
+				continue
+			}
+			params[key] = typed
+		case int:
+			if typed <= 0 {
+				continue
+			}
+			params[key] = typed
+		default:
+			if value != nil {
+				params[key] = value
+			}
+		}
+	}
+	return params
+}
+
+func must_json(value any) json.RawMessage {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return json.RawMessage(data)
 }
 
 func capture_name(query *tree_sitter.Query, index uint) string {

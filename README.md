@@ -12,6 +12,9 @@ The current implementation provides:
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary
 - symbol overview extraction for common agent navigation workflows
+- symbol filtering by name and kind for fast codebase lookup
+- callsite discovery for common function and method usage exploration
+- common high-level query presets for agent-friendly workflows
 - index status inspection for cached roots and recent query metadata
 - incremental grammar regeneration through `tree-sitter-cli` only when the cached grammar inputs change
 - portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries fetched directly from upstream release URLs
@@ -172,6 +175,9 @@ The black-box tests exercise:
 - `roots.add`
 - `query` on `src/main.go`
 - `symbols.overview` on `src/main.go`
+- `symbols.find` on `src/main.go`
+- `calls.find` on `src/main.go`
+- `query.common` on `src/main.go`
 - stdio server mode request streaming
 
 The build no longer compiles `tree-sitter-cli` locally. It downloads the official upstream release binary for the current platform and uses Bun as the JavaScript runtime for `tree-sitter generate`.
@@ -221,6 +227,29 @@ Removes one or more registered roots.
 
 The `query` method parses every matching file under the selected roots and returns the captured nodes with byte offsets, points, kinds, and captured text.
 
+`query.common`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":1,
+  "method":"query.common",
+  "params":{
+    "language":"go",
+    "preset":"functions.by_name",
+    "name":"handle_query",
+    "roots":["C:/repo"],
+    "include":"**/*.go"
+  }
+}
+```
+
+Provides higher-level preset searches for common agent workflows. Current presets are:
+
+- `functions.by_name`
+- `types.by_name`
+- `calls.by_name`
+
 `symbols.overview`
 
 ```json
@@ -240,6 +269,45 @@ The `query` method parses every matching file under the selected roots and retur
 
 Returns a high-level symbol inventory for matching files, including symbol kind, name, container, signature preview, and byte/point ranges. This is intended as the fast, agent-friendly entry point before falling back to raw Tree-sitter queries.
 
+`symbols.find`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":1,
+  "method":"symbols.find",
+  "params":{
+    "language":"go",
+    "name":"handle_query",
+    "kinds":["function"],
+    "roots":["C:/repo"],
+    "include":"**/*.go",
+    "match_mode":"exact"
+  }
+}
+```
+
+Filters the symbol inventory by name and optional kinds. `match_mode` currently supports `exact`, `contains`, `prefix`, `suffix`, and `regex`.
+
+`calls.find`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":1,
+  "method":"calls.find",
+  "params":{
+    "language":"go",
+    "callee":"invalid_params",
+    "roots":["C:/repo"],
+    "include":"**/*.go",
+    "match_mode":"exact"
+  }
+}
+```
+
+Finds call expressions by callee text across matching files and returns the matched expression plus byte and point ranges.
+
 ## Agent skill
 
 [`src/SKILL.md`](C:/Users/Michele/Desktop/ceretree/src/SKILL.md) documents how an AI agent can use `ceretree` efficiently.
@@ -249,4 +317,6 @@ Recommended flow:
 - start with `system.describe`
 - inspect `index.status`
 - use `symbols.overview` for broad navigation
+- use `symbols.find` for named symbol lookup
+- use `calls.find` or `query.common` for common usage patterns
 - use `query` for low-level or unusual cases where the high-level RPCs are not enough
