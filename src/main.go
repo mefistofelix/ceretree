@@ -27,7 +27,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.4.0"
+const version = "0.4.1"
 
 var supported_languages = []string{
 	"bash",
@@ -70,6 +70,7 @@ type runtime_context struct {
 	executable_path string
 	cache_dir       string
 	state_path      string
+	process_id      int
 	server_mode     bool
 	server_target   string
 	started_at      time.Time
@@ -281,6 +282,7 @@ func new_runtime_context(server_mode bool, server_target string) (*runtime_conte
 		executable_path: executable_path,
 		cache_dir:       cache_dir,
 		state_path:      filepath.Join(cache_dir, "state.json"),
+		process_id:      os.Getpid(),
 		server_mode:     server_mode,
 		server_target:   server_target,
 		started_at:      time.Now().UTC(),
@@ -493,6 +495,7 @@ func handle_system_describe(context *runtime_context, _ json.RawMessage) (any, e
 		"version":         version,
 		"os":              runtime.GOOS,
 		"arch":            runtime.GOARCH,
+		"process_id":      context.process_id,
 		"executable_path": context.executable_path,
 		"cache_dir":       context.cache_dir,
 		"languages":       supported_languages,
@@ -536,6 +539,7 @@ func handle_index_status(context *runtime_context, _ json.RawMessage) (any, erro
 	return map[string]any{
 		"cache_dir":             context.cache_dir,
 		"state_path":            context.state_path,
+		"process_id":            context.process_id,
 		"roots":                 state.Roots,
 		"server_mode":           context.server_mode,
 		"server_target":         context.server_target,

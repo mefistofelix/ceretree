@@ -37,9 +37,11 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 - Choose a unique temporary Unix socket path yourself.
 - Start the server once and give that process a long timeout so you can reuse it across many requests.
 - Keep the server alive while doing other agent work between requests.
+- Wait for readiness before the first request. Prefer curl retry flags instead of writing shell retry loops.
 - Send simple HTTP `POST` requests to `/rpc`, carrying one JSON-RPC request body and expecting one JSON-RPC response body back.
 - Use a curl-compatible client so the same flow works on Windows and Linux.
 - Stop the server explicitly when finished and remove the socket path.
+- Use `system.describe` to confirm readiness and inspect `process_id` if you need to verify that later requests are hitting the same server process.
 
 ## Preferred server commands
 
@@ -61,19 +63,19 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 Windows Unix socket:
 
 ```text
-curl.exe --unix-socket C:/temp/ceretree.sock -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://localhost/rpc
+curl.exe --retry 20 --retry-all-errors --retry-delay 0 --unix-socket C:/temp/ceretree.sock -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://localhost/rpc
 ```
 
 Linux Unix socket:
 
 ```text
-curl --unix-socket /tmp/ceretree.sock -H 'content-type: application/json' -X POST --data-binary '{"jsonrpc":"2.0","id":1,"method":"system.describe"}' http://localhost/rpc
+curl --retry 20 --retry-all-errors --retry-delay 0 --unix-socket /tmp/ceretree.sock -H 'content-type: application/json' -X POST --data-binary '{"jsonrpc":"2.0","id":1,"method":"system.describe"}' http://localhost/rpc
 ```
 
 TCP fallback:
 
 ```text
-curl -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"index.status\"}" http://127.0.0.1:9000/rpc
+curl --retry 20 --retry-all-errors --retry-delay 0 -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"index.status\"}" http://127.0.0.1:9000/rpc
 ```
 
 ## Why keep raw Tree-sitter queries available

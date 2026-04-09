@@ -195,31 +195,33 @@ Server transport:
 - or start with `ceretree --server tcp://127.0.0.1:9000`
 - send HTTP `POST` requests to `/rpc`
 - request and response bodies stay JSON-RPC `2.0`
+- use curl retry flags to wait for readiness instead of shell retry loops when possible
 
 Unix-socket example on Windows with `curl.exe`:
 
 ```bat
 ceretree --server unix://C:/temp/ceretree.sock
-curl.exe --unix-socket C:/temp/ceretree.sock -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://localhost/rpc
+curl.exe --retry 20 --retry-all-errors --retry-delay 0 --unix-socket C:/temp/ceretree.sock -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://localhost/rpc
 ```
 
 Unix-socket example on Linux:
 
 ```sh
 ./ceretree --server unix:///tmp/ceretree.sock
-curl --unix-socket /tmp/ceretree.sock -H 'content-type: application/json' -X POST --data-binary '{"jsonrpc":"2.0","id":1,"method":"system.describe"}' http://localhost/rpc
+curl --retry 20 --retry-all-errors --retry-delay 0 --unix-socket /tmp/ceretree.sock -H 'content-type: application/json' -X POST --data-binary '{"jsonrpc":"2.0","id":1,"method":"system.describe"}' http://localhost/rpc
 ```
 
 TCP example:
 
 ```text
 ceretree --server tcp://127.0.0.1:9000
-curl -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://127.0.0.1:9000/rpc
+curl --retry 20 --retry-all-errors --retry-delay 0 -H "content-type: application/json" -X POST --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"system.describe\"}" http://127.0.0.1:9000/rpc
 ```
 
 `system.describe`
 
 Returns executable metadata, cache location, supported languages, and currently implemented methods.
+The response also includes `process_id` and the active server target when the binary is running in server mode.
 
 `index.status`
 
