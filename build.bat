@@ -166,6 +166,12 @@ if "%NEEDS_BUN%"=="1" if exist "%GRAMMAR_DIR%\package.json" (
   popd
 )
 
+if "%NEEDS_BUN%"=="1" if exist "%REPO_DIR%\package.json" (
+  pushd "%REPO_DIR%" || exit /b 1
+  "%BUN_EXE%" install --ignore-scripts || exit /b 1
+  popd
+)
+
 pushd "%GRAMMAR_DIR%" || exit /b 1
 "%TREE_SITTER_EXE%" generate --js-runtime bun || exit /b 1
 popd

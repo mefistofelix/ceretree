@@ -44,7 +44,7 @@ The pipeline is:
 
 1. bootstrap portable toolchains into `build_cache/`
 2. fetch grammar repositories from `GRAMMARS.txt`
-3. install grammar-local JS dependencies with Bun when required
+3. install grammar-repo and grammar-local JS dependencies with Bun when required
    using `bun install --ignore-scripts` because grammar generation only needs package resolution, not native Node addon build hooks
 4. run `tree-sitter generate` for every grammar on every build
 5. compile generated `parser.c` plus optional `scanner.c` or `scanner.cc` with Zig

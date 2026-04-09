@@ -117,6 +117,10 @@ while IFS='|' read -r language repo revision location needs_npm; do
     (cd "$grammar_dir" && "$BUN_BIN" install --ignore-scripts)
   fi
 
+  if [ "$needs_npm" = "1" ] && [ -f "$repo_dir/package.json" ]; then
+    (cd "$repo_dir" && "$BUN_BIN" install --ignore-scripts)
+  fi
+
   (cd "$grammar_dir" && "$TREE_SITTER_BIN" generate --js-runtime bun)
 
   parser_file="$grammar_dir/src/parser.c"
