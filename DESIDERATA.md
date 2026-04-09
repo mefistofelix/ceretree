@@ -96,6 +96,20 @@ The CLI should support two primary modes:
 - one-shot mode
 - persistent server mode
 
+The CLI surface should stay intentionally small and stable.
+
+### Required CLI parameters
+
+The reboot should treat these CLI parameters as first-class:
+
+- raw JSON-RPC request as positional argument in one-shot mode
+- stdin as an alternative request source in one-shot mode
+- `--server <target>`
+- `--help`
+- `--version`
+
+Additional CLI flags are acceptable only when they provide clear operational value and do not bloat the interface.
+
 ### One-shot mode
 
 One-shot mode should accept a raw JSON-RPC request either:
@@ -115,6 +129,37 @@ Persistent server mode should be started with a single explicit flag, for exampl
 The process should remain alive until terminated by the caller.
 
 The server should expose enough runtime metadata through RPC to let the caller confirm that repeated requests are hitting the same live process.
+
+### CLI parameter intent
+
+`--server <target>`
+
+Starts persistent HTTP JSON-RPC server mode bound to the provided target.
+
+The accepted target forms should be:
+
+- `unix://absolute/path.sock`
+- `tcp://host:port`
+
+`--help`
+
+Prints concise usage documentation for one-shot mode, server mode, and the accepted target formats.
+
+`--version`
+
+Prints a concise machine-friendly version string suitable for scripts and diagnostics.
+
+### CLI behavior rules
+
+If `--server` is present, server mode takes precedence over one-shot request execution.
+
+If `--server` is absent, the process should behave as a one-shot client-facing command.
+
+If neither a positional request nor stdin request is provided in one-shot mode, the process should fail clearly with a concise usage error.
+
+The CLI should not require environment variables for normal operation.
+
+The CLI should not require a separate config file for normal operation.
 
 ## Agent workflow requirements
 
