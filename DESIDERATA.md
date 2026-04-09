@@ -233,6 +233,21 @@ The implementation should use normal JSON-RPC semantics for:
 - method not found
 - internal errors
 
+## Protocol stability
+
+The reboot should preserve a stable external contract even if the internal implementation changes substantially.
+
+The following should be treated as stability-sensitive:
+
+- method names
+- top-level request parameter names
+- top-level response field names
+- common paging fields
+- common summary fields
+- supported transport target forms
+
+If a field or behavior is experimental, it should be clearly marked as such in the documentation rather than silently drifting over time.
+
 ### Common request parameters
 
 Most exploration RPCs should converge on a common parameter vocabulary where it makes sense:
@@ -402,6 +417,20 @@ Where it is useful, `ceretree` should cache:
 
 The design should treat binary AST reuse as an important capability because it can make generic raw queries much faster than reparsing every file on every request.
 
+### Logical storage model
+
+The persistent store should be designed around a few stable logical domains even if the physical schema evolves.
+
+These domains should include at least:
+
+- root registration state
+- recent request metadata
+- reusable analysis cache
+- AST-related cache if implemented
+- watcher or invalidation metadata if needed
+
+This keeps the storage design understandable during the rewrite without overconstraining the exact schema.
+
 ### Cache model
 
 The cache should separate at least these logical layers:
@@ -435,6 +464,21 @@ At minimum it should distinguish by:
 
 If binary AST storage is implemented, the format must be explicitly versioned so upgrades do not silently reuse incompatible data.
 
+### Invalidation policy
+
+The implementation should make cache invalidation rules explicit rather than implicit.
+
+At minimum, invalidation should consider:
+
+- file modification metadata changes
+- content hash changes where used
+- cache schema version changes
+- grammar-set version changes
+- native binding compatibility changes
+- binary AST format version changes if binary AST caching exists
+
+Broad invalidation should be preferred over unsafe reuse when compatibility is uncertain.
+
 ### Concurrency
 
 Multiple `ceretree` server processes may share the same cache directory.
@@ -461,6 +505,20 @@ The monitoring layer should explicitly support these behaviors:
 - keeping the server responsive while background invalidation happens
 
 The monitoring design should prefer correctness first and should then optimize for lower-latency incremental refresh.
+
+### Monitoring lifecycle
+
+Persistent monitoring should be tied to persistent server mode.
+
+The monitoring design should specify clearly:
+
+- when watching starts
+- which roots are watched
+- whether only registered roots are watched or whether per-request roots can participate
+- when watching stops
+- how invalidation events are surfaced into cache refresh
+
+This should be documented explicitly because it affects performance, correctness, and mental model.
 
 ## RPC surface
 
@@ -567,6 +625,20 @@ Should find callsites by callee text or equivalent syntactic representation.
 
 Should resolve the innermost node plus enclosing blocks and enclosing symbols around a file coordinate.
 
+### Match semantics
+
+Text-based match semantics should be explicit and consistent across methods that use them.
+
+At minimum, the project should standardize:
+
+- `exact`
+- `contains`
+- `prefix`
+- `suffix`
+- `regex`
+
+Case-sensitivity policy should also be documented explicitly rather than left implicit.
+
 ### High-level query philosophy
 
 Common repetitive code exploration tasks should not require the agent to write long, tedious Tree-sitter queries every time.
@@ -621,6 +693,8 @@ This is important for agents because editing errors often come from not understa
 
 The response should make the nesting obvious enough that an agent can decide what exact source range should be read or edited next.
 
+The ordering of enclosing scopes should be defined consistently, for example from innermost to outermost.
+
 ## Performance direction
 
 The system should optimize for real codebase exploration, not toy examples.
@@ -635,6 +709,33 @@ Important performance directions include:
 - low-overhead multi-file search
 
 The system should prefer a persistent server plus hot cache path for repeated exploration work on the same codebase.
+
+## Path and filesystem policy
+
+The project should define path handling explicitly.
+
+At minimum:
+
+- responses should prefer absolute paths
+- inputs may accept absolute paths and root-relative paths where appropriate
+- path normalization rules should be documented
+- Windows and Linux path differences should be handled intentionally rather than incidentally
+
+This matters because agents often compose paths between multiple tools.
+
+## Operational limits
+
+The project should define practical limits and behaviors for large requests and responses.
+
+At minimum it should document or enforce sensible behavior for:
+
+- very broad file scans
+- large result sets
+- oversized request bodies
+- long-running raw queries
+- server readiness timing
+
+The goal is not to overconstrain the implementation, but to make behavior predictable for clients.
 
 ## Testing direction
 
@@ -669,6 +770,20 @@ The test plan should also include persistent server behavior such as:
 - cache reuse across multiple requests
 - invalidation after file changes once monitoring exists
 
+## Error policy
+
+Error handling should be predictable and documented.
+
+The implementation should distinguish clearly between:
+
+- invalid client input
+- unsupported methods
+- unsupported language or grammar ids
+- filesystem access failures
+- internal processing failures
+
+Where custom error codes are introduced beyond normal JSON-RPC codes, they should be documented in a stable and concise way.
+
 ## Skill and MCP friendliness
 
 The project must remain friendly to AI agent skills and should remain easy to adapt into `MCP` if useful later.
@@ -688,6 +803,18 @@ It must explain clearly:
 - how to use persistent reuse correctly
 
 The skill should help an agent avoid common mistakes rather than merely listing commands.
+
+## Release artifact contract
+
+The release should remain easy to consume by both humans and agents.
+
+At minimum, release outputs should include:
+
+- Windows x64 runnable artifact
+- Linux x64 runnable artifact
+- the skill documentation that explains how to drive the tool correctly
+
+If the runtime architecture requires more than one shipped file, that packaging should still feel like a self-contained release unit from the `XProjectUser` perspective.
 
 ## Spec-driven restart intent
 
