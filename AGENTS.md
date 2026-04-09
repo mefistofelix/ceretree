@@ -113,6 +113,6 @@
 - in CI `gh` MUST be used only to upload artifacts to the release of the current tag and, if needed, to download metadata or source of `XProject` itself
 - in CI GitHub credentials and tokens SHOULD be passed only to avoid API or download rate limits and MUST NOT be used to add extra publish or push behavior
 - release CI MAY be triggered either by tag push or by `workflow_dispatch`; both modes MUST remain available
-- `workflow_dispatch` MAY be preferred for manual release testing, but `XAgent` MUST NOT trigger it unless `XDev` explicitly asks for it
+- `workflow_dispatch` MAY be used by `XAgent` for CI testing when useful, and MAY also be preferred for manual release testing
 - `XAgent` MUST choose exactly one CI trigger for a given intended release or test run and MUST NOT start a second trigger while another equivalent run is already active or already sufficient
 - if both a tag-triggered run and a manual run exist for the same intended release or the same commit, `XAgent` MUST keep only one and MUST cancel the duplicate
