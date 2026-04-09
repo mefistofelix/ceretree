@@ -702,3 +702,162 @@ This document should be detailed enough that the project can be restarted from z
 - the storage and monitoring direction chosen for the reboot
 
 The implementation may change completely, but these product-level and protocol-level decisions should remain stable unless intentionally revised.
+
+## Validated implementation notes
+
+This section captures practical knowledge from the previous prototype so the Bun/JS rewrite can avoid rediscovering the same issues.
+
+These notes are not meant to force the exact same implementation, but they should influence the rewrite design.
+
+### Grammar and generation notes
+
+Grammar generation should be treated as a first-class build phase, not as an optional fallback.
+
+Always generating grammar C sources from the selected upstream grammar revision is preferred because:
+
+- it avoids trusting stale pre-generated parser files
+- it keeps the build deterministic relative to the pinned or resolved grammar revision
+- it removes ambiguity between repositories that commit generated C and repositories that do not
+
+Some grammar repositories need JavaScript package resolution before generation.
+
+In particular, repository-root package installation matters for repositories that host multiple grammars in subdirectories.
+
+The previous prototype validated that grammar dependency resolution may need to happen both:
+
+- at the grammar repository root
+- and again in the grammar subdirectory when that subdirectory has its own package boundary
+
+The rewrite should therefore keep grammar dependency setup explicit and should not assume that installing only inside the leaf grammar directory is enough.
+
+`tsx` and `typescript` must remain distinct grammar ids even when they come from the same upstream repository, because they represent different parse domains for agents.
+
+### Build-system notes
+
+The previous prototype validated that the cold-bootstrapped toolchain story matters a lot.
+
+Portable upstream binaries are strongly preferred for bootstrapped tools when available.
+
+In particular, using official release binaries for the Tree-sitter CLI was better than compiling the CLI locally during every bootstrap, because local CLI compilation created unnecessary platform friction.
+
+The rewrite should continue to prefer:
+
+- portable Bun bootstrap
+- portable Zig bootstrap
+- official prebuilt helper tools where practical
+
+The build system should continue to:
+
+- download only what is needed
+- reuse sentinels or equivalent state to skip repeated expensive grammar work
+- avoid re-fetching unchanged grammar snapshots
+- avoid re-running dependency installation when inputs did not change
+- avoid re-running grammar generation when inputs did not change
+
+### Windows and shell notes
+
+The previous prototype repeatedly hit Windows shell friction.
+
+The rewrite should continue to assume:
+
+- PowerShell is not `cmd.exe`
+- PowerShell is not POSIX shell
+- `curl` on Windows may be a PowerShell alias rather than the real curl binary
+
+Skill and test documentation should therefore explicitly prefer `curl.exe` on Windows for Unix-socket HTTP requests.
+
+Shell retry loops should be avoided when client retry support already exists.
+
+Client-side retry support is preferred for waiting on server readiness because it keeps the scripts smaller and less error-prone.
+
+### Transport notes
+
+The previous prototype validated that persistent stdio is awkward for agent runtimes that do not expose reusable subprocess handles.
+
+The rewrite should therefore continue to optimize around:
+
+- persistent HTTP server mode
+- explicit `unix://...` targets
+- optional `tcp://...` fallback
+
+One major validated property is that a reattachable HTTP transport makes it possible for an agent to:
+
+- start the server once
+- issue requests over time
+- interleave those requests with other tool usage
+- verify process continuity through returned process metadata
+
+This was a meaningful design validation and should be preserved.
+
+### Cache notes
+
+The previous prototype validated that multiple simultaneous server processes using the same cache directory must be expected.
+
+The rewrite should therefore not assume single-process ownership of the durable cache.
+
+Even before moving to `SQLite`, atomic write behavior was required to avoid cache corruption.
+
+This reinforces the decision to move the durable cache to `SQLite` in the reboot.
+
+The previous prototype also validated that there are two distinct cache classes:
+
+- durable reusable data shared across process lifetimes
+- hot in-memory data that only matters for a live server process
+
+The rewrite should preserve this distinction rather than forcing one cache mechanism to solve everything.
+
+### Query and response notes
+
+The previous prototype validated that broad exploration methods benefit from a consistent response structure and from default paging.
+
+Default `limit=100` was a useful operational choice and should be preserved unless later evidence shows a better default.
+
+The rewrite should continue to favor:
+
+- explicit paging
+- explicit summary metadata
+- predictable truncation
+
+over returning arbitrarily large result sets.
+
+The previous prototype also validated the practical usefulness of these RPC families:
+
+- raw `query`
+- `symbols.overview`
+- `symbols.find`
+- `references.find`
+- `calls.find`
+- `context.at`
+- `query.common`
+
+The rewrite should treat these as product-proven, not speculative.
+
+### Test-system notes
+
+The previous prototype validated several testing rules that should be preserved in the rewrite:
+
+- test scripts should not call build scripts
+- CLI and server behavior should be tested as black-box interfaces
+- persistent server tests should verify repeated requests to the same live process
+- startup-readiness behavior should be tested through client retries, not only through artificial sleeps
+
+The rewrite test plan should also preserve real-repository validation on meaningful public codebases such as `redis` and `wordpress`.
+
+### Documentation and skill notes
+
+The previous prototype validated that the skill documentation must be unusually explicit.
+
+It is not enough to state that a persistent server exists.
+
+The skill must explain concretely:
+
+- which transport to choose
+- how to choose the socket path
+- how to start the server
+- how to wait for readiness
+- how to query it correctly on Windows and Linux
+- how to confirm process continuity
+- when to use high-level RPCs first
+- when to drop to raw Tree-sitter queries
+
+The rewrite should preserve this level of operational specificity.
