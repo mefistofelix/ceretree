@@ -22,6 +22,7 @@ The current implementation provides:
 - common high-level query presets for agent-friendly workflows
 - result paging through `limit` and `offset` on exploration RPCs, with `limit` defaulting to `100`
 - index status inspection for cached roots and recent query metadata
+- persistent per-file analysis cache for `symbols.overview`, `symbols.find`, `calls.find`, and `references.find`
 - incremental grammar regeneration through `tree-sitter-cli` only when the cached grammar inputs change
 - portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries fetched directly from upstream release URLs
 
@@ -44,7 +45,7 @@ Current supported grammars:
 Current scope limits:
 
 - filesystem watch and realtime reload are not implemented yet
-- cache currently stores runtime state and query metadata, not reusable serialized syntax trees
+- cache stores runtime state, recent query metadata, and reusable per-file analysis snapshots for symbol/call/reference exploration
 
 ## Build architecture
 
@@ -229,7 +230,7 @@ The response also includes `process_id` and the active server target when the bi
 
 `index.status`
 
-Returns the configured roots plus cache metadata such as the last query and the last symbol overview summary when present.
+Returns the configured roots plus cache metadata such as the last query, the last symbol overview summary, and the current per-file analysis cache inventory when present.
 
 `roots.add`
 
@@ -344,7 +345,7 @@ Filters the symbol inventory by name and optional kinds. `match_mode` currently 
     "language":"go",
     "path":"src/main.go",
     "roots":["C:/repo"],
-    "row":259,
+    "row":286,
     "column":10
   }
 }

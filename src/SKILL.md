@@ -13,7 +13,7 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 ## When to use which command
 
 - Use `system.describe` first to discover supported methods, runtime mode, and compiled languages.
-- Use `index.status` to inspect configured roots and recent cache metadata before issuing expensive searches.
+- Use `index.status` to inspect configured roots, recent cache metadata, and the reusable per-file analysis cache before issuing expensive searches.
 - Use `symbols.overview` as the default high-level exploration command when you need a broad map of files, functions, methods, classes, interfaces, types, modules, or packages.
 - Use `context.at` before edits when you need to know the exact enclosing function, type, or block at a coordinate.
 - Use `symbols.find` when you already know the symbol name or want a narrow lookup by kind.
@@ -34,6 +34,13 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 7. Call `query.common` for common cases that do not need raw query syntax.
 8. Page broad result sets with `limit` and `offset`.
 9. If the result is still too broad or you need a special structural pattern, fall back to `query`.
+
+## Cache-aware usage
+
+- `symbols.overview`, `symbols.find`, `calls.find`, and `references.find` share the same reusable per-file analysis cache.
+- The first broad exploration request on a file warms that cache; later symbol/call/reference requests on unchanged files should be cheaper.
+- `query` stays uncached on purpose because its structure is arbitrary and low-level.
+- If you want to confirm cache warmup on a large repository, call `index.status` after an exploration request and inspect `analysis_cache.files`.
 
 ## Preferred persistent server lifecycle
 
@@ -179,7 +186,7 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "language":"go",
     "path":"src/main.go",
     "roots":["C:/repo"],
-    "row":259,
+    "row":286,
     "column":10
   }
 }

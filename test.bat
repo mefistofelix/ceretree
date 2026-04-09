@@ -42,12 +42,22 @@ if errorlevel 1 exit /b 1
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (Array.isArray(data.result.files) && data.result.files.length >= 1 && Array.isArray(data.result.files[0].symbols) && data.result.files[0].symbols.length >= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
+>"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":51,"method":"index.status"}
+"%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
+"%SystemRoot%\System32\findstr.exe" /c:"\"analysis_cache\"" "%RESPONSE_FILE%" >nul
+if errorlevel 1 exit /b 1
+if not exist "%ROOT%\bin\.ceretree-cache\analysis" exit /b 1
+set "HAS_ANALYSIS_CACHE="
+for %%F in ("%ROOT%\bin\.ceretree-cache\analysis\*.json") do set "HAS_ANALYSIS_CACHE=1"
+if not defined HAS_ANALYSIS_CACHE exit /b 1
+if errorlevel 1 exit /b 1
+
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":6,"method":"symbols.find","params":{"language":"go","name":"handle_query","kinds":["function"],"roots":["%JSON_ROOT%"],"include":"src/main.go"}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const symbols = data.result.files.flatMap(file => file.symbols); if (symbols.some(symbol => symbol.name === 'handle_query')) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
->"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":62,"method":"context.at","params":{"language":"go","path":"src/main.go","roots":["%JSON_ROOT%"],"row":259,"column":10}}
+>"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":62,"method":"context.at","params":{"language":"go","path":"src/main.go","roots":["%JSON_ROOT%"],"row":286,"column":10}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.relative !== 'src/main.go') process.exit(1); if (!Array.isArray(data.result.symbols) || !data.result.symbols.some(symbol => symbol.name === 'run')) process.exit(1); if (!Array.isArray(data.result.blocks) || data.result.blocks.length < 1) process.exit(1); process.exit(0);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1

@@ -8,6 +8,7 @@ import "C"
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 var supported_languages = []string{
 	"bash",
@@ -78,6 +79,17 @@ type runtime_context struct {
 
 type cache_state struct {
 	Roots []string `json:"roots"`
+}
+
+type analysis_cache_entry struct {
+	Version    int               `json:"version"`
+	Language   string            `json:"language"`
+	Path       string            `json:"path"`
+	Size       int64             `json:"size"`
+	ModifiedAt string            `json:"modified_at"`
+	Symbols    []symbol_overview `json:"symbols"`
+	Calls      []call_match      `json:"calls"`
+	References []reference_match `json:"references"`
 }
 
 type roots_params struct {
@@ -589,6 +601,11 @@ func handle_index_status(context *runtime_context, _ json.RawMessage) (any, erro
 		return nil, err
 	}
 
+	analysis_cache, err := describe_analysis_cache(context)
+	if err != nil {
+		return nil, err
+	}
+
 	return map[string]any{
 		"cache_dir":             context.cache_dir,
 		"state_path":            context.state_path,
@@ -598,6 +615,7 @@ func handle_index_status(context *runtime_context, _ json.RawMessage) (any, erro
 		"server_target":         context.server_target,
 		"started_at":            context.started_at.Format(time.RFC3339Nano),
 		"cache_files":           describe_cache_files(context.cache_dir, []string{"state.json", "last-query.json", "last-symbols-overview.json"}),
+		"analysis_cache":        analysis_cache,
 		"last_query":            last_query,
 		"last_symbols_overview": last_symbols_overview,
 	}, nil
@@ -804,7 +822,7 @@ func handle_symbols_overview(context *runtime_context, params json.RawMessage) (
 	var total_symbols int
 
 	for _, root := range roots {
-		root_files, scanned, symbols_found, err := overview_root(root, include_patterns, exclude_patterns, parser, max_symbols-total_symbols)
+		root_files, scanned, symbols_found, err := overview_root(context, parsed.Language, root, include_patterns, exclude_patterns, parser, max_symbols-total_symbols)
 		if err != nil {
 			return nil, err
 		}
@@ -886,7 +904,7 @@ func handle_symbols_find(context *runtime_context, params json.RawMessage) (any,
 	var total_symbols int
 
 	for _, root := range roots {
-		root_files, scanned, _, err := overview_root(root, include_patterns, exclude_patterns, parser, max_symbols-total_symbols)
+		root_files, scanned, _, err := overview_root(context, parsed.Language, root, include_patterns, exclude_patterns, parser, max_symbols-total_symbols)
 		if err != nil {
 			return nil, err
 		}
@@ -976,7 +994,7 @@ func handle_calls_find(context *runtime_context, params json.RawMessage) (any, e
 	var total_calls int
 
 	for _, root := range roots {
-		root_files, scanned, calls_found, err := calls_root(root, include_patterns, exclude_patterns, parser, parsed.Callee, parsed.MatchMode, max_calls-total_calls)
+		root_files, scanned, calls_found, err := calls_root(context, parsed.Language, root, include_patterns, exclude_patterns, parser, parsed.Callee, parsed.MatchMode, max_calls-total_calls)
 		if err != nil {
 			return nil, err
 		}
@@ -1052,7 +1070,7 @@ func handle_references_find(context *runtime_context, params json.RawMessage) (a
 	var total_references int
 
 	for _, root := range roots {
-		root_files, scanned, references_found, err := references_root(root, include_patterns, exclude_patterns, parser, parsed.Name, parsed.Kinds, parsed.MatchMode, max_references-total_references)
+		root_files, scanned, references_found, err := references_root(context, parsed.Language, root, include_patterns, exclude_patterns, parser, parsed.Name, parsed.Kinds, parsed.MatchMode, max_references-total_references)
 		if err != nil {
 			return nil, err
 		}
@@ -1470,6 +1488,8 @@ func query_file(
 }
 
 func overview_root(
+	context *runtime_context,
+	language_name string,
 	root string,
 	include_patterns []string,
 	exclude_patterns []string,
@@ -1503,7 +1523,7 @@ func overview_root(
 		}
 
 		files_scanned++
-		file_symbols, err := overview_file(path, root, relative, parser, remaining_symbols-total_symbols)
+		file_symbols, err := overview_file(context, language_name, path, root, relative, parser, remaining_symbols-total_symbols)
 		if err != nil {
 			return err
 		}
@@ -1522,25 +1542,20 @@ func overview_root(
 }
 
 func overview_file(
+	context *runtime_context,
+	language_name string,
 	path string,
 	root string,
 	relative string,
 	parser *tree_sitter.Parser,
 	remaining_symbols int,
 ) (symbol_file, error) {
-	source, err := os.ReadFile(path)
+	analysis, err := load_or_create_analysis(context, language_name, path, parser)
 	if err != nil {
 		return symbol_file{}, err
 	}
 
-	tree := parser.Parse(source, nil)
-	if tree == nil {
-		return symbol_file{}, fmt.Errorf("tree-sitter parse failed for %s", path)
-	}
-	defer tree.Close()
-
-	var symbols []symbol_overview
-	collect_symbols(source, tree.RootNode(), "", remaining_symbols, &symbols)
+	symbols := slice_prefix(analysis.Symbols, remaining_symbols)
 
 	return symbol_file{
 		Path:     path,
@@ -1598,6 +1613,8 @@ func resolve_context_file(context *runtime_context, path string, explicit_roots 
 }
 
 func calls_root(
+	context *runtime_context,
+	language_name string,
 	root string,
 	include_patterns []string,
 	exclude_patterns []string,
@@ -1633,7 +1650,7 @@ func calls_root(
 		}
 
 		files_scanned++
-		file_calls, err := calls_file(path, root, relative, parser, callee, match_mode, remaining_calls-total_calls)
+		file_calls, err := calls_file(context, language_name, path, root, relative, parser, callee, match_mode, remaining_calls-total_calls)
 		if err != nil {
 			return err
 		}
@@ -1652,6 +1669,8 @@ func calls_root(
 }
 
 func references_root(
+	context *runtime_context,
+	language_name string,
 	root string,
 	include_patterns []string,
 	exclude_patterns []string,
@@ -1688,7 +1707,7 @@ func references_root(
 		}
 
 		files_scanned++
-		file_references, err := references_file(path, root, relative, parser, name, kinds, match_mode, remaining_references-total_references)
+		file_references, err := references_file(context, language_name, path, root, relative, parser, name, kinds, match_mode, remaining_references-total_references)
 		if err != nil {
 			return err
 		}
@@ -1707,6 +1726,8 @@ func references_root(
 }
 
 func calls_file(
+	context *runtime_context,
+	language_name string,
 	path string,
 	root string,
 	relative string,
@@ -1715,19 +1736,12 @@ func calls_file(
 	match_mode string,
 	remaining_calls int,
 ) (call_file, error) {
-	source, err := os.ReadFile(path)
+	analysis, err := load_or_create_analysis(context, language_name, path, parser)
 	if err != nil {
 		return call_file{}, err
 	}
 
-	tree := parser.Parse(source, nil)
-	if tree == nil {
-		return call_file{}, fmt.Errorf("tree-sitter parse failed for %s", path)
-	}
-	defer tree.Close()
-
-	var calls []call_match
-	collect_calls(source, tree.RootNode(), callee, normalize_match_mode(match_mode), remaining_calls, &calls)
+	calls := filter_calls(analysis.Calls, callee, match_mode, remaining_calls)
 
 	return call_file{
 		Path:     path,
@@ -1738,6 +1752,8 @@ func calls_file(
 }
 
 func references_file(
+	context *runtime_context,
+	language_name string,
 	path string,
 	root string,
 	relative string,
@@ -1747,19 +1763,12 @@ func references_file(
 	match_mode string,
 	remaining_references int,
 ) (reference_file, error) {
-	source, err := os.ReadFile(path)
+	analysis, err := load_or_create_analysis(context, language_name, path, parser)
 	if err != nil {
 		return reference_file{}, err
 	}
 
-	tree := parser.Parse(source, nil)
-	if tree == nil {
-		return reference_file{}, fmt.Errorf("tree-sitter parse failed for %s", path)
-	}
-	defer tree.Close()
-
-	var references []reference_match
-	collect_references(source, tree.RootNode(), name, kinds, normalize_match_mode(match_mode), remaining_references, &references)
+	references := filter_references(analysis.References, name, kinds, match_mode, remaining_references)
 
 	return reference_file{
 		Path:       path,
@@ -2268,6 +2277,213 @@ func count_references_in_files(files []reference_file) int {
 		total += len(file.References)
 	}
 	return total
+}
+
+func filter_calls(all []call_match, callee string, match_mode string, remaining_calls int) []call_match {
+	filtered := make([]call_match, 0, min(len(all), remaining_calls))
+	normalized_mode := normalize_match_mode(match_mode)
+	for _, call := range all {
+		if !matches_text(call.Callee, callee, normalized_mode) {
+			continue
+		}
+		filtered = append(filtered, call)
+		if len(filtered) >= remaining_calls {
+			break
+		}
+	}
+	return filtered
+}
+
+func filter_references(all []reference_match, name string, kinds []string, match_mode string, remaining_references int) []reference_match {
+	filtered := make([]reference_match, 0, min(len(all), remaining_references))
+	allowed_kinds := map[string]struct{}{}
+	for _, kind := range kinds {
+		if strings.TrimSpace(kind) != "" {
+			allowed_kinds[kind] = struct{}{}
+		}
+	}
+
+	normalized_mode := normalize_match_mode(match_mode)
+	for _, reference := range all {
+		if len(allowed_kinds) > 0 {
+			if _, ok := allowed_kinds[reference.Kind]; !ok {
+				continue
+			}
+		}
+		if !matches_text(reference.Name, name, normalized_mode) {
+			continue
+		}
+		filtered = append(filtered, reference)
+		if len(filtered) >= remaining_references {
+			break
+		}
+	}
+	return filtered
+}
+
+func slice_prefix[T any](items []T, limit int) []T {
+	if limit <= 0 || len(items) <= limit {
+		return append([]T{}, items...)
+	}
+	return append([]T{}, items[:limit]...)
+}
+
+func load_or_create_analysis(
+	context *runtime_context,
+	language_name string,
+	path string,
+	parser *tree_sitter.Parser,
+) (*analysis_cache_entry, error) {
+	entry, err := load_analysis_cache_entry(context, language_name, path)
+	if err != nil {
+		return nil, err
+	}
+	if entry != nil {
+		return entry, nil
+	}
+
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	tree := parser.Parse(source, nil)
+	if tree == nil {
+		return nil, fmt.Errorf("tree-sitter parse failed for %s", path)
+	}
+	defer tree.Close()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	symbols := make([]symbol_overview, 0, 64)
+	collect_symbols(source, tree.RootNode(), "", int(^uint(0)>>1), &symbols)
+
+	calls := make([]call_match, 0, 64)
+	collect_calls(source, tree.RootNode(), "", "contains", int(^uint(0)>>1), &calls)
+
+	references := make([]reference_match, 0, 128)
+	collect_references(source, tree.RootNode(), "", nil, "contains", int(^uint(0)>>1), &references)
+
+	entry = &analysis_cache_entry{
+		Version:    1,
+		Language:   language_name,
+		Path:       filepath.Clean(path),
+		Size:       info.Size(),
+		ModifiedAt: info.ModTime().UTC().Format(time.RFC3339Nano),
+		Symbols:    symbols,
+		Calls:      calls,
+		References: references,
+	}
+
+	if err := save_analysis_cache_entry(context, entry); err != nil {
+		return nil, err
+	}
+
+	return entry, nil
+}
+
+func load_analysis_cache_entry(context *runtime_context, language_name string, path string) (*analysis_cache_entry, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	cache_path := analysis_cache_path(context, language_name, path)
+	data, err := os.ReadFile(cache_path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var entry analysis_cache_entry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, nil
+	}
+
+	if entry.Version != 1 {
+		return nil, nil
+	}
+	if entry.Language != language_name {
+		return nil, nil
+	}
+	if filepath.Clean(entry.Path) != filepath.Clean(path) {
+		return nil, nil
+	}
+	if entry.Size != info.Size() {
+		return nil, nil
+	}
+	if entry.ModifiedAt != info.ModTime().UTC().Format(time.RFC3339Nano) {
+		return nil, nil
+	}
+
+	return &entry, nil
+}
+
+func save_analysis_cache_entry(context *runtime_context, entry *analysis_cache_entry) error {
+	cache_dir := filepath.Join(context.cache_dir, "analysis")
+	if err := os.MkdirAll(cache_dir, 0o755); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(analysis_cache_path(context, entry.Language, entry.Path), data, 0o644)
+}
+
+func analysis_cache_path(context *runtime_context, language_name string, path string) string {
+	sum := sha1.Sum([]byte(language_name + "\n" + filepath.Clean(path)))
+	return filepath.Join(context.cache_dir, "analysis", fmt.Sprintf("%x.json", sum))
+}
+
+func describe_analysis_cache(context *runtime_context) (map[string]any, error) {
+	cache_dir := filepath.Join(context.cache_dir, "analysis")
+	if err := os.MkdirAll(cache_dir, 0o755); err != nil {
+		return nil, err
+	}
+
+	var files int
+	var total_size int64
+	latest_modified_at := ""
+
+	err := filepath.WalkDir(cache_dir, func(path string, entry fs.DirEntry, walk_err error) error {
+		if walk_err != nil {
+			return walk_err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		files++
+		total_size += info.Size()
+		modified_at := info.ModTime().UTC().Format(time.RFC3339Nano)
+		if modified_at > latest_modified_at {
+			latest_modified_at = modified_at
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"dir":                cache_dir,
+		"files":              files,
+		"total_size":         total_size,
+		"latest_modified_at": latest_modified_at,
+	}, nil
 }
 
 func must_json(value any) json.RawMessage {
