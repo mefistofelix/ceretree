@@ -46,6 +46,25 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 - Stop the server explicitly when finished and remove the socket path.
 - Use `system.describe` to confirm readiness and inspect `process_id` if you need to verify that later requests are hitting the same server process.
 
+## How to use `context.at`
+
+- Use `context.at` when you already have a file and an approximate coordinate and need to understand the real edit scope before reading or patching.
+- `innermost` is the deepest named node at that coordinate. It tells you what syntactic element you are directly on.
+- `blocks` is the enclosing block stack from outermost to innermost. Use it to understand control-flow and brace-delimited scope.
+- `symbols` is the enclosing symbol stack from outermost to innermost. Use it to identify the containing package, type, function, method, class, struct, or similar declaration.
+- Prefer `symbols` when deciding which definition you are inside.
+- Prefer `blocks` when deciding how much local code to read around a conditional, loop, or nested statement region.
+- Use the returned `start` and `end` points to decide which exact lines to inspect before editing.
+- If `context.at` shows that the target point is inside a different symbol than expected, stop and re-anchor before editing.
+
+## Edit-oriented workflow
+
+1. Use `symbols.find` or `references.find` to identify candidate files and approximate positions.
+2. Use `context.at` on the exact coordinate you plan to edit.
+3. Read the enclosing symbol range returned by `context.at`.
+4. Read any narrower inner block range if the change is local.
+5. Only then prepare the edit.
+
 ## Preferred server commands
 
 - Windows preferred:
