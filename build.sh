@@ -125,11 +125,11 @@ while IFS='|' read -r language repo revision location needs_npm; do
   mkdir -p "$state_dir"
 
   if [ "$revision" = "HEAD" ]; then
-    default_branch="$(curl -fsSL "https://api.github.com/repos/$repo_slug" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+    default_branch="$(gh api "repos/$repo_slug" --jq ".default_branch")"
     [ -n "$default_branch" ] || exit 1
-    resolved_revision="$(curl -fsSL "https://api.github.com/repos/$repo_slug/commits/$default_branch" | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' | head -n 1)"
+    resolved_revision="$(gh api "repos/$repo_slug/commits/$default_branch" --jq ".sha")"
   else
-    resolved_revision="$(curl -fsSL "https://api.github.com/repos/$repo_slug/commits/$revision" | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' | head -n 1)"
+    resolved_revision="$(gh api "repos/$repo_slug/commits/$revision" --jq ".sha")"
   fi
   [ -n "$resolved_revision" ] || exit 1
 
@@ -137,7 +137,7 @@ while IFS='|' read -r language repo revision location needs_npm; do
     echo "[ceretree] grammar $language download snapshot"
     rm -rf "$archive_tmp" "$repo_dir"
     mkdir -p "$archive_tmp"
-    curl -fsSL "https://github.com/$repo_slug/archive/$resolved_revision.zip" -o "$archive_zip"
+    gh api "repos/$repo_slug/zipball/$resolved_revision" >"$archive_zip"
     unzip -qo "$archive_zip" -d "$archive_tmp"
     extracted_dir="$(find "$archive_tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "$extracted_dir" ] || exit 1
