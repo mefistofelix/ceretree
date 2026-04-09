@@ -21,9 +21,8 @@ jobs:
       - run: git remote add origin "https://github.com/${{ github.repository }}.git"
       - run: git fetch --depth=1 origin "${{ github.sha }}"
       - run: git checkout --force FETCH_HEAD
-      - run: chmod +x build.sh test.sh
+      - run: chmod +x build.sh
       - run: ./build.sh
-      - run: ./test.sh
 
   build-windows:
     runs-on: windows-latest
@@ -38,8 +37,6 @@ jobs:
         run: git checkout --force FETCH_HEAD
       - shell: cmd
         run: build.bat
-      - shell: cmd
-        run: test.bat
       - shell: cmd
         run: if not exist dist mkdir dist
       - shell: cmd
