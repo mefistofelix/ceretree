@@ -32,6 +32,13 @@ set "SRC_DIR=%GENERATED_DIR%\src"
 set "LIB_DIR=%GENERATED_DIR%\lib"
 set "LIB_FILE=%LIB_DIR%\ceretree_grammars.a"
 set "OBJECTS="
+set "TARGET_NAME="
+set "TARGET_CC="
+set "TARGET_CXX="
+set "TARGET_GOOS="
+set "TARGET_GOARCH="
+set "TARGET_OUTPUT="
+set "TARGET_CGO_LDFLAGS="
 
 for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
   if not exist "%%~D" mkdir "%%~D"
@@ -64,21 +71,24 @@ if not exist "%TREE_SITTER_EXE%" (
 
 set "PATH=%GO_DIR%\bin;%BUN_DIR%;%PATH%"
 
->"%WRAPPER_DIR%\zig-cc.cmd" (
+>"%WRAPPER_DIR%\zig-cc-windows.cmd" (
   echo @echo off
   echo "%ZIG_EXE%" cc -target x86_64-windows-gnu %%*
 )
->"%WRAPPER_DIR%\zig-cxx.cmd" (
+>"%WRAPPER_DIR%\zig-cxx-windows.cmd" (
   echo @echo off
   echo "%ZIG_EXE%" c++ -target x86_64-windows-gnu %%*
 )
+>"%WRAPPER_DIR%\zig-cc-linux.cmd" (
+  echo @echo off
+  echo "%ZIG_EXE%" cc -target x86_64-linux-musl %%*
+)
+>"%WRAPPER_DIR%\zig-cxx-linux.cmd" (
+  echo @echo off
+  echo "%ZIG_EXE%" c++ -target x86_64-linux-musl %%*
+)
 
-set "CC=%WRAPPER_DIR%\zig-cc.cmd"
-set "CXX=%WRAPPER_DIR%\zig-cxx.cmd"
 set "CGO_ENABLED=1"
-
-if exist "%OBJ_DIR%" del /q "%OBJ_DIR%\*" >nul 2>nul
-if exist "%LIB_FILE%" del /q "%LIB_FILE%" >nul 2>nul
 
 >"%INC_DIR%\ceretree_grammars.h" (
   echo typedef struct TSLanguage TSLanguage;
@@ -101,17 +111,63 @@ for /f "usebackq tokens=1 delims=|" %%A in ("%ROOT%\GRAMMARS.txt") do (
 >>"%SRC_DIR%\ceretree_grammars.c" echo   return 0;
 >>"%SRC_DIR%\ceretree_grammars.c" echo }
 
-call "%WRAPPER_DIR%\zig-cc.cmd" -c -O2 "-I%INC_DIR%" "%SRC_DIR%\ceretree_grammars.c" "-o%OBJ_DIR%\ceretree_grammars.o" || goto :fail
-set "OBJECTS=%OBJECTS% "%OBJ_DIR%\ceretree_grammars.o""
-
-"%ZIG_EXE%" ar rcs "%LIB_FILE%" %OBJECTS% || goto :fail
-
 "%GOFMT_EXE%" -w "%ROOT%\src\main.go" || goto :fail
 
-set "CGO_CFLAGS=-I%INC_DIR%"
-set "CGO_LDFLAGS=%LIB_FILE%"
+call :build_target windows "%WRAPPER_DIR%\zig-cc-windows.cmd" "%WRAPPER_DIR%\zig-cxx-windows.cmd" windows amd64 "%ROOT%\bin\ceretree.exe" "%LIB_FILE%" || goto :fail
+call :build_target linux "%WRAPPER_DIR%\zig-cc-linux.cmd" "%WRAPPER_DIR%\zig-cxx-linux.cmd" linux amd64 "%ROOT%\bin\ceretree" "%LIB_FILE% -static" || goto :fail
+exit /b 0
 
-"%GO_EXE%" build -o "%ROOT%\bin\ceretree.exe" ./src || goto :fail
+:build_target
+set "TARGET_NAME=%~1"
+set "TARGET_CC=%~2"
+set "TARGET_CXX=%~3"
+set "TARGET_GOOS=%~4"
+set "TARGET_GOARCH=%~5"
+set "TARGET_OUTPUT=%~6"
+set "TARGET_CGO_LDFLAGS=%~7"
+set "OBJECTS="
+
+if exist "%OBJ_DIR%" del /q "%OBJ_DIR%\*" >nul 2>nul
+if exist "%LIB_FILE%" del /q "%LIB_FILE%" >nul 2>nul
+
+call "%TARGET_CC%" -c -O2 "-I%INC_DIR%" "%SRC_DIR%\ceretree_grammars.c" "-o%OBJ_DIR%\ceretree_grammars.o" || exit /b 1
+set "OBJECTS=%OBJECTS% "%OBJ_DIR%\ceretree_grammars.o""
+
+for /f "usebackq tokens=1-5 delims=|" %%A in ("%ROOT%\GRAMMARS.txt") do (
+  call :compile_grammar_objects "%%~A" "%%~D" || exit /b 1
+)
+
+"%ZIG_EXE%" ar rcs "%LIB_FILE%" %OBJECTS% || exit /b 1
+
+set "CC=%TARGET_CC%"
+set "CXX=%TARGET_CXX%"
+set "GOOS=%TARGET_GOOS%"
+set "GOARCH=%TARGET_GOARCH%"
+set "CGO_CFLAGS=-I%INC_DIR%"
+set "CGO_LDFLAGS=%TARGET_CGO_LDFLAGS%"
+
+"%GO_EXE%" build -o "%TARGET_OUTPUT%" ./src || exit /b 1
+exit /b 0
+
+:compile_grammar_objects
+set "LANGUAGE=%~1"
+set "LOCATION=%~2"
+set "GRAMMAR_DIR=%GRAMMAR_ROOT%\%LANGUAGE%\repo"
+if not "%LOCATION%"=="." set "GRAMMAR_DIR=%GRAMMAR_DIR%\%LOCATION%"
+
+call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\parser.c" "-o%OBJ_DIR%\%LANGUAGE%_parser.o" || exit /b 1
+set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_parser.o""
+
+if exist "%GRAMMAR_DIR%\src\scanner.c" (
+  call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.c" "-o%OBJ_DIR%\%LANGUAGE%_scanner.o" || exit /b 1
+  set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_scanner.o""
+)
+
+if exist "%GRAMMAR_DIR%\src\scanner.cc" (
+  call "%TARGET_CXX%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.cc" "-o%OBJ_DIR%\%LANGUAGE%_scanner_cc.o" || exit /b 1
+  set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_scanner_cc.o""
+)
+
 exit /b 0
 
 :prepare_grammar
@@ -152,19 +208,6 @@ popd
 if not exist "%GRAMMAR_DIR%\src\parser.c" exit /b 1
 
 >>"%SRC_DIR%\ceretree_grammars.c" echo extern const TSLanguage *tree_sitter_%LANGUAGE%^(void^);
-
-call "%WRAPPER_DIR%\zig-cc.cmd" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\parser.c" "-o%OBJ_DIR%\%LANGUAGE%_parser.o" || exit /b 1
-set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_parser.o""
-
-if exist "%GRAMMAR_DIR%\src\scanner.c" (
-  call "%WRAPPER_DIR%\zig-cc.cmd" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.c" "-o%OBJ_DIR%\%LANGUAGE%_scanner.o" || exit /b 1
-  set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_scanner.o""
-)
-
-if exist "%GRAMMAR_DIR%\src\scanner.cc" (
-  call "%WRAPPER_DIR%\zig-cxx.cmd" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.cc" "-o%OBJ_DIR%\%LANGUAGE%_scanner_cc.o" || exit /b 1
-  set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_scanner_cc.o""
-)
 
 exit /b 0
 

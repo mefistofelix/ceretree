@@ -62,6 +62,11 @@ This keeps the release binary self-contained while avoiding pre-generated gramma
 - Bun `1.3.11`
 - `tree-sitter-cli` `v0.26.8` from the official Windows x64 release asset
 
+On Windows, a single `build.bat` run now produces both:
+
+- `bin/ceretree.exe` for Windows x64
+- `bin/ceretree` as a static ELF for Linux x64 via cross-compilation
+
 `build.sh` bootstraps the same toolchain set for Linux using the official Linux x64 release asset.
 
 Portable tool state is stored under:
@@ -98,6 +103,11 @@ Windows:
 ```bat
 build.bat
 ```
+
+Expected outputs:
+
+- `bin\ceretree.exe`
+- `bin\ceretree` as a static Linux x64 ELF
 
 Linux:
 
