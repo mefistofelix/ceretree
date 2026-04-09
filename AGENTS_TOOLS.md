@@ -1,10 +1,5 @@
 # Agent Tools
 
-The project bootstraps the following portable tools under `build_cache/`:
+No agent-only portable tools are currently installed under `.agents_tools/`.
 
-- Go toolchain
-- Zig toolchain
-- Bun
-- official tree-sitter-cli release binaries
-
-These tools are used only for development and build orchestration.
+Project build and test dependencies bootstrapped under `build_cache/` are not tracked here, because `AGENTS_TOOLS.md` is reserved for tools used only by `XAgent` for agentic workflow support.
