@@ -52,6 +52,7 @@ if [ ! -x "$TREE_SITTER_BIN" ]; then
   rm -rf "$ROOT/build_cache/tools/tree-sitter-cli"
   mkdir -p "$ROOT/build_cache/tools/tree-sitter-cli/bin"
   unzip -qo "$TREE_SITTER_ARCHIVE" -d "$ROOT/build_cache/tools/tree-sitter-cli/bin"
+  chmod +x "$TREE_SITTER_BIN"
 fi
 
 cat >"$WRAPPER_DIR/zig-cc.sh" <<EOF
