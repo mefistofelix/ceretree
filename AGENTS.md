@@ -100,3 +100,11 @@
 - you must remember that powershell does not support multiple commands on the same line via cmd1 && cmd2
 - the test script should not call build script
 - if crosscompilation is possible for the project use only linux runners and reate release artifacts for boh platforms
+
+- build is build only: it MUST bootstrap only the build dependencies it really needs and MUST NOT push, tag, release, test, or call CI-related remote operations
+- test is test only: it MUST bootstrap only the test dependencies it really needs, MUST NOT call build, and MUST NOT install build-only dependencies
+- by default `build.bat` and `build.sh` MUST build only for the current platform; optional explicit target arguments MAY build other supported platforms when the toolchain supports cross-compilation
+- CI is release-artifact publishing only: it SHOULD prefer Linux runners when cross-compilation is supported and SHOULD create both Linux x64 and Windows x64 artifacts there
+- CI MUST NOT use third-party GitHub Actions, MUST NOT push commits, branches, or tags, and MUST NOT create extra repository mutations unrelated to uploading release artifacts
+- in CI `gh` MUST be used only to upload artifacts to the release of the current tag and, if needed, to download metadata or source of `XProject` itself
+- in CI GitHub credentials and tokens SHOULD be passed only to avoid API or download rate limits and MUST NOT be used to add extra publish or push behavior
