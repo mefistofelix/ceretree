@@ -112,7 +112,7 @@
 - CI MUST NOT use third-party GitHub Actions, MUST NOT push commits, branches, or tags, and MUST NOT create extra repository mutations unrelated to uploading release artifacts
 - in CI `gh` MUST be used only to upload artifacts to the release of the current tag and, if needed, to download metadata or source of `XProject` itself
 - in CI GitHub credentials and tokens SHOULD be passed only to avoid API or download rate limits and MUST NOT be used to add extra publish or push behavior
-- release CI MUST go through a Git tag release by default; `XAgent` MUST prefer pushing a tag and letting tag-triggered CI publish the artifacts for that tag
-- `workflow_dispatch` for release CI is only a manual fallback and `XAgent` MUST NOT trigger it unless `XDev` explicitly asks for it
-- `XAgent` MUST NOT trigger both tag-push CI and manual `workflow_dispatch` CI for the same intended release or the same commit
-- if a tag-triggered CI run already exists for the intended release, `XAgent` MUST treat that run as the only valid release run and MUST cancel any duplicate manual run
+- release CI MAY be triggered either by tag push or by `workflow_dispatch`; both modes MUST remain available
+- `workflow_dispatch` MAY be preferred for manual release testing, but `XAgent` MUST NOT trigger it unless `XDev` explicitly asks for it
+- `XAgent` MUST choose exactly one CI trigger for a given intended release or test run and MUST NOT start a second trigger while another equivalent run is already active or already sufficient
+- if both a tag-triggered run and a manual run exist for the same intended release or the same commit, `XAgent` MUST keep only one and MUST cancel the duplicate
