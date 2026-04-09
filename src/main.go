@@ -24,7 +24,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 var supported_languages = []string{
 	"bash",
@@ -85,6 +85,8 @@ type query_params struct {
 	Roots    []string        `json:"roots"`
 	Include  json.RawMessage `json:"include"`
 	Exclude  json.RawMessage `json:"exclude"`
+	Limit    int             `json:"limit"`
+	Offset   int             `json:"offset"`
 }
 
 type symbols_overview_params struct {
@@ -93,6 +95,8 @@ type symbols_overview_params struct {
 	Include    json.RawMessage `json:"include"`
 	Exclude    json.RawMessage `json:"exclude"`
 	MaxSymbols int             `json:"max_symbols"`
+	Limit      int             `json:"limit"`
+	Offset     int             `json:"offset"`
 }
 
 type symbols_find_params struct {
@@ -104,6 +108,8 @@ type symbols_find_params struct {
 	Exclude    json.RawMessage `json:"exclude"`
 	MatchMode  string          `json:"match_mode"`
 	MaxSymbols int             `json:"max_symbols"`
+	Limit      int             `json:"limit"`
+	Offset     int             `json:"offset"`
 }
 
 type calls_find_params struct {
@@ -114,6 +120,8 @@ type calls_find_params struct {
 	Exclude   json.RawMessage `json:"exclude"`
 	MatchMode string          `json:"match_mode"`
 	MaxCalls  int             `json:"max_calls"`
+	Limit     int             `json:"limit"`
+	Offset    int             `json:"offset"`
 }
 
 type query_common_params struct {
@@ -126,6 +134,8 @@ type query_common_params struct {
 	Exclude   json.RawMessage `json:"exclude"`
 	MatchMode string          `json:"match_mode"`
 	MaxItems  int             `json:"max_items"`
+	Limit     int             `json:"limit"`
+	Offset    int             `json:"offset"`
 }
 
 type file_match struct {
@@ -579,14 +589,20 @@ func handle_query(context *runtime_context, params json.RawMessage) (any, error)
 		"roots":         roots,
 	})
 
+	total_files := len(matches)
+	matches = page_file_matches(matches, parsed.Offset, parsed.Limit)
+
 	return map[string]any{
 		"roots": roots,
 		"summary": map[string]any{
-			"language":      parsed.Language,
-			"files_scanned": files_scanned,
-			"files_matched": len(matches),
-			"started_at":    started.Format(time.RFC3339Nano),
-			"duration_ms":   time.Since(started).Milliseconds(),
+			"language":       parsed.Language,
+			"files_scanned":  files_scanned,
+			"files_matched":  total_files,
+			"files_returned": len(matches),
+			"offset":         max(parsed.Offset, 0),
+			"limit":          normalized_limit(parsed.Limit),
+			"started_at":     started.Format(time.RFC3339Nano),
+			"duration_ms":    time.Since(started).Milliseconds(),
 		},
 		"matches": matches,
 	}, nil
@@ -651,16 +667,24 @@ func handle_symbols_overview(context *runtime_context, params json.RawMessage) (
 		"roots":          roots,
 	})
 
+	total_files := len(files)
+	total_symbols_before_page := count_symbols_in_files(files)
+	files = page_symbol_files(files, parsed.Offset, parsed.Limit)
+
 	return map[string]any{
 		"roots": roots,
 		"summary": map[string]any{
-			"language":       parsed.Language,
-			"files_scanned":  files_scanned,
-			"files_reported": len(files),
-			"symbols":        total_symbols,
-			"max_symbols":    max_symbols,
-			"started_at":     started.Format(time.RFC3339Nano),
-			"duration_ms":    time.Since(started).Milliseconds(),
+			"language":         parsed.Language,
+			"files_scanned":    files_scanned,
+			"files_reported":   total_files,
+			"files_returned":   len(files),
+			"symbols":          total_symbols_before_page,
+			"symbols_returned": count_symbols_in_files(files),
+			"max_symbols":      max_symbols,
+			"offset":           max(parsed.Offset, 0),
+			"limit":            normalized_limit(parsed.Limit),
+			"started_at":       started.Format(time.RFC3339Nano),
+			"duration_ms":      time.Since(started).Milliseconds(),
 		},
 		"files": files,
 	}, nil
@@ -730,16 +754,24 @@ func handle_symbols_find(context *runtime_context, params json.RawMessage) (any,
 		}
 	}
 
+	total_files := len(files)
+	total_symbols_before_page := count_symbols_in_files(files)
+	files = page_symbol_files(files, parsed.Offset, parsed.Limit)
+
 	return map[string]any{
 		"roots": roots,
 		"summary": map[string]any{
-			"language":       parsed.Language,
-			"files_scanned":  files_scanned,
-			"files_reported": len(files),
-			"symbols":        total_symbols,
-			"match_mode":     normalize_match_mode(parsed.MatchMode),
-			"started_at":     started.Format(time.RFC3339Nano),
-			"duration_ms":    time.Since(started).Milliseconds(),
+			"language":         parsed.Language,
+			"files_scanned":    files_scanned,
+			"files_reported":   total_files,
+			"files_returned":   len(files),
+			"symbols":          total_symbols_before_page,
+			"symbols_returned": count_symbols_in_files(files),
+			"match_mode":       normalize_match_mode(parsed.MatchMode),
+			"offset":           max(parsed.Offset, 0),
+			"limit":            normalized_limit(parsed.Limit),
+			"started_at":       started.Format(time.RFC3339Nano),
+			"duration_ms":      time.Since(started).Milliseconds(),
 		},
 		"files": files,
 	}, nil
@@ -798,14 +830,22 @@ func handle_calls_find(context *runtime_context, params json.RawMessage) (any, e
 		}
 	}
 
+	total_files := len(files)
+	total_calls_before_page := count_calls_in_files(files)
+	files = page_call_files(files, parsed.Offset, parsed.Limit)
+
 	return map[string]any{
 		"roots": roots,
 		"summary": map[string]any{
 			"language":       parsed.Language,
 			"files_scanned":  files_scanned,
-			"files_reported": len(files),
-			"calls":          total_calls,
+			"files_reported": total_files,
+			"files_returned": len(files),
+			"calls":          total_calls_before_page,
+			"calls_returned": count_calls_in_files(files),
 			"match_mode":     normalize_match_mode(parsed.MatchMode),
+			"offset":         max(parsed.Offset, 0),
+			"limit":          normalized_limit(parsed.Limit),
 			"started_at":     started.Format(time.RFC3339Nano),
 			"duration_ms":    time.Since(started).Milliseconds(),
 		},
@@ -837,6 +877,8 @@ func handle_query_common(context *runtime_context, params json.RawMessage) (any,
 			"exclude":     parsed.Exclude,
 			"match_mode":  parsed.MatchMode,
 			"max_symbols": parsed.MaxItems,
+			"limit":       parsed.Limit,
+			"offset":      parsed.Offset,
 		})))
 	case "types.by_name":
 		return handle_symbols_find(context, must_json(params_from_map(map[string]any{
@@ -848,6 +890,8 @@ func handle_query_common(context *runtime_context, params json.RawMessage) (any,
 			"exclude":     parsed.Exclude,
 			"match_mode":  parsed.MatchMode,
 			"max_symbols": parsed.MaxItems,
+			"limit":       parsed.Limit,
+			"offset":      parsed.Offset,
 		})))
 	case "calls.by_name":
 		return handle_calls_find(context, must_json(params_from_map(map[string]any{
@@ -858,6 +902,8 @@ func handle_query_common(context *runtime_context, params json.RawMessage) (any,
 			"exclude":    parsed.Exclude,
 			"match_mode": parsed.MatchMode,
 			"max_calls":  parsed.MaxItems,
+			"limit":      parsed.Limit,
+			"offset":     parsed.Offset,
 		})))
 	default:
 		return nil, invalid_params(fmt.Sprintf("unsupported preset: %s", parsed.Preset))
@@ -1572,6 +1618,63 @@ func params_from_map(values map[string]any) map[string]any {
 		}
 	}
 	return params
+}
+
+func effective_limit(limit int) int {
+	if limit <= 0 {
+		return 100
+	}
+	return limit
+}
+
+func normalized_limit(limit int) int {
+	return effective_limit(limit)
+}
+
+func page_bounds(total int, offset int, limit int) (int, int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return total, total
+	}
+	limit = effective_limit(limit)
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return offset, end
+}
+
+func page_file_matches(matches []file_match, offset int, limit int) []file_match {
+	start, end := page_bounds(len(matches), offset, limit)
+	return matches[start:end]
+}
+
+func page_symbol_files(files []symbol_file, offset int, limit int) []symbol_file {
+	start, end := page_bounds(len(files), offset, limit)
+	return files[start:end]
+}
+
+func page_call_files(files []call_file, offset int, limit int) []call_file {
+	start, end := page_bounds(len(files), offset, limit)
+	return files[start:end]
+}
+
+func count_symbols_in_files(files []symbol_file) int {
+	total := 0
+	for _, file := range files {
+		total += len(file.Symbols)
+	}
+	return total
+}
+
+func count_calls_in_files(files []call_file) int {
+	total := 0
+	for _, file := range files {
+		total += len(file.Calls)
+	}
+	return total
 }
 
 func must_json(value any) json.RawMessage {

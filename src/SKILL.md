@@ -11,6 +11,7 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 - Use `calls.find` when you want callsites for a specific callee across many files.
 - Use `query.common` for frequent agent-oriented searches that should stay shorter than raw Tree-sitter queries.
 - Use `query` when you need a precise low-level Tree-sitter search pattern across many files.
+- Use `limit` and `offset` early on large repositories so the agent can iterate instead of requesting huge result sets at once. If omitted, `limit` defaults to `100`.
 
 ## Recommended exploration flow
 
@@ -20,7 +21,8 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 4. Call `symbols.overview` on a narrow glob first.
 5. Call `symbols.find` or `calls.find` when you already have a candidate name.
 6. Call `query.common` for common cases that do not need raw query syntax.
-7. If the result is still too broad or you need a special structural pattern, fall back to `query`.
+7. Page broad result sets with `limit` and `offset`.
+8. If the result is still too broad or you need a special structural pattern, fall back to `query`.
 
 ## Why keep raw Tree-sitter queries available
 
@@ -62,7 +64,9 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "roots":["C:/repo"],
     "include":"**/*.go",
     "exclude":"**/vendor/**",
-    "max_symbols":200
+    "max_symbols":200,
+    "limit":20,
+    "offset":0
   }
 }
 ```
@@ -79,7 +83,9 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "name":"handle_query",
     "kinds":["function"],
     "roots":["C:/repo"],
-    "include":"**/*.go"
+    "include":"**/*.go",
+    "limit":20,
+    "offset":0
   }
 }
 ```
@@ -95,7 +101,9 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "language":"go",
     "callee":"invalid_params",
     "roots":["C:/repo"],
-    "include":"**/*.go"
+    "include":"**/*.go",
+    "limit":20,
+    "offset":0
   }
 }
 ```
@@ -112,7 +120,9 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "preset":"functions.by_name",
     "name":"handle_query",
     "roots":["C:/repo"],
-    "include":"**/*.go"
+    "include":"**/*.go",
+    "limit":20,
+    "offset":0
   }
 }
 ```
@@ -128,7 +138,9 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "language":"go",
     "query":"(call_expression function: (identifier) @callee (#eq? @callee \"Open\"))",
     "roots":["C:/repo"],
-    "include":"**/*.go"
+    "include":"**/*.go",
+    "limit":20,
+    "offset":0
   }
 }
 ```

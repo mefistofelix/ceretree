@@ -15,6 +15,7 @@ The current implementation provides:
 - symbol filtering by name and kind for fast codebase lookup
 - callsite discovery for common function and method usage exploration
 - common high-level query presets for agent-friendly workflows
+- result paging through `limit` and `offset` on exploration RPCs, with `limit` defaulting to `100`
 - index status inspection for cached roots and recent query metadata
 - incremental grammar regeneration through `tree-sitter-cli` only when the cached grammar inputs change
 - portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries fetched directly from upstream release URLs
@@ -220,12 +221,14 @@ Removes one or more registered roots.
     "query":"(package_identifier) @name",
     "roots":["C:/repo"],
     "include":"**/*.go",
-    "exclude":"**/vendor/**"
+    "exclude":"**/vendor/**",
+    "limit":50,
+    "offset":0
   }
 }
 ```
 
-The `query` method parses every matching file under the selected roots and returns the captured nodes with byte offsets, points, kinds, and captured text.
+The `query` method parses every matching file under the selected roots and returns the captured nodes with byte offsets, points, kinds, and captured text. `limit` and `offset` page the returned file list, and `limit` defaults to `100`.
 
 `query.common`
 
@@ -239,7 +242,9 @@ The `query` method parses every matching file under the selected roots and retur
     "preset":"functions.by_name",
     "name":"handle_query",
     "roots":["C:/repo"],
-    "include":"**/*.go"
+    "include":"**/*.go",
+    "limit":20,
+    "offset":0
   }
 }
 ```
@@ -282,12 +287,14 @@ Returns a high-level symbol inventory for matching files, including symbol kind,
     "kinds":["function"],
     "roots":["C:/repo"],
     "include":"**/*.go",
-    "match_mode":"exact"
+    "match_mode":"exact",
+    "limit":20,
+    "offset":0
   }
 }
 ```
 
-Filters the symbol inventory by name and optional kinds. `match_mode` currently supports `exact`, `contains`, `prefix`, `suffix`, and `regex`.
+Filters the symbol inventory by name and optional kinds. `match_mode` currently supports `exact`, `contains`, `prefix`, `suffix`, and `regex`. `limit` and `offset` page the returned file list, and `limit` defaults to `100`.
 
 `calls.find`
 
@@ -301,12 +308,14 @@ Filters the symbol inventory by name and optional kinds. `match_mode` currently 
     "callee":"invalid_params",
     "roots":["C:/repo"],
     "include":"**/*.go",
-    "match_mode":"exact"
+    "match_mode":"exact",
+    "limit":20,
+    "offset":0
   }
 }
 ```
 
-Finds call expressions by callee text across matching files and returns the matched expression plus byte and point ranges.
+Finds call expressions by callee text across matching files and returns the matched expression plus byte and point ranges. `limit` and `offset` page the returned file list, and `limit` defaults to `100`.
 
 ## Agent skill
 
@@ -319,4 +328,5 @@ Recommended flow:
 - use `symbols.overview` for broad navigation
 - use `symbols.find` for named symbol lookup
 - use `calls.find` or `query.common` for common usage patterns
+- use `limit` and `offset` on large codebases to page through broad results instead of pulling everything at once
 - use `query` for low-level or unusual cases where the high-level RPCs are not enough
