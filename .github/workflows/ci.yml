@@ -26,5 +26,4 @@ jobs:
       - run: mkdir -p dist
       - run: cp bin/ceretree dist/ceretree-linux-x64
       - run: cp bin/ceretree.exe dist/ceretree-windows-x64.exe
-      - run: gh release view edge >/dev/null
       - run: gh release upload edge dist/ceretree-linux-x64 dist/ceretree-windows-x64.exe --clobber
