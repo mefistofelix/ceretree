@@ -1,0 +1,10 @@
+bin/
+build_cache/
+tests_cache/
+.ceretree-cache/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
