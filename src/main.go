@@ -7,6 +7,8 @@ package main
 import "C"
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +26,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.3.1"
+const version = "0.3.2"
 
 var supported_languages = []string{
 	"bash",
@@ -234,6 +236,7 @@ func parse_cli_mode(args []string) (string, bool, error) {
 		if err != nil {
 			return "", false, err
 		}
+		stdin = strip_utf8_bom(stdin)
 		if strings.TrimSpace(string(stdin)) == "" {
 			return "", false, errors.New("missing JSON-RPC request argument or stdin payload")
 		}
@@ -268,15 +271,12 @@ func new_runtime_context(server_mode bool) (*runtime_context, error) {
 }
 
 func serve_stdio(context *runtime_context) int {
-	decoder := json.NewDecoder(os.Stdin)
+	reader := bufio.NewReader(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 
 	for {
-		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil {
-			if errors.Is(err, io.EOF) {
-				return 0
-			}
+		raw, err := reader.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
 			response := &rpc_response{
 				JSONRPC: "2.0",
 				Error: &rpc_error_body{
@@ -288,6 +288,14 @@ func serve_stdio(context *runtime_context) int {
 			return 1
 		}
 
+		raw = normalize_json_input(raw)
+		if len(raw) == 0 {
+			if errors.Is(err, io.EOF) {
+				return 0
+			}
+			continue
+		}
+
 		request, response := decode_request(raw)
 		if response == nil {
 			result, call_err := dispatch(context, request)
@@ -297,10 +305,16 @@ func serve_stdio(context *runtime_context) int {
 		if err := encoder.Encode(response); err != nil {
 			return write_fatal(err)
 		}
+
+		if errors.Is(err, io.EOF) {
+			return 0
+		}
 	}
 }
 
 func decode_request(data []byte) (*rpc_request, *rpc_response) {
+	data = normalize_json_input(data)
+
 	var request rpc_request
 	if err := json.Unmarshal(data, &request); err != nil {
 		return nil, &rpc_response{
@@ -335,6 +349,25 @@ func decode_request(data []byte) (*rpc_request, *rpc_response) {
 	}
 
 	return &request, nil
+}
+
+func strip_utf8_bom(data []byte) []byte {
+	if len(data) >= 3 && data[0] == 0xef && data[1] == 0xbb && data[2] == 0xbf {
+		return data[3:]
+	}
+
+	return data
+}
+
+func normalize_json_input(data []byte) []byte {
+	data = bytes.TrimSpace(data)
+	data = strip_utf8_bom(data)
+
+	if len(data) >= 6 && data[0] == 0xc3 && data[1] == 0xaf && data[2] == 0xc2 && data[3] == 0xbb && data[4] == 0xc2 && data[5] == 0xbf {
+		return data[6:]
+	}
+
+	return data
 }
 
 func dispatch(context *runtime_context, request *rpc_request) (any, error) {

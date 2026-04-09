@@ -8,6 +8,8 @@ The current implementation provides:
 
 - one-shot CLI execution through a raw JSON-RPC request passed as the first argument or through stdin
 - stdio JSON-RPC server mode through `--server`
+- stdio server framing uses one JSON-RPC request per line and returns one JSON-RPC response per line
+- UTF-8 BOM on stdin is tolerated in one-shot mode and stdio server mode for better Windows PowerShell interoperability
 - persistent root registration in `bin/.ceretree-cache/state.json`
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary

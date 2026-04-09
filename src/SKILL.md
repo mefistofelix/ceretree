@@ -2,6 +2,8 @@
 
 Use `ceretree` as a fast code-exploration backend for source trees registered through JSON-RPC.
 
+For persistent stdio mode, send one JSON-RPC request per line and read one JSON-RPC response per line.
+
 ## When to use which command
 
 - Use `system.describe` first to discover supported methods, runtime mode, and compiled languages.
