@@ -7,9 +7,12 @@
 The current implementation provides:
 
 - one-shot CLI execution through a raw JSON-RPC request passed as the first argument or through stdin
+- stdio JSON-RPC server mode through `--server`
 - persistent root registration in `bin/.ceretree-cache/state.json`
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary
+- symbol overview extraction for common agent navigation workflows
+- index status inspection for cached roots and recent query metadata
 - incremental grammar regeneration through `tree-sitter-cli` only when the cached grammar inputs change
 - portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries fetched directly from upstream release URLs
 
@@ -31,7 +34,8 @@ Current supported grammars:
 
 Current scope limits:
 
-- server mode is not implemented yet
+- server mode currently supports stdio only
+- unix socket and network socket server transports are not implemented yet
 - filesystem watch and realtime reload are not implemented yet
 - cache currently stores runtime state and query metadata, not reusable serialized syntax trees
 - release packaging and GitHub release automation are not implemented yet
@@ -164,8 +168,11 @@ The test entrypoints do not bootstrap the build. Run the appropriate build first
 The black-box tests exercise:
 
 - `system.describe`
+- `index.status`
 - `roots.add`
 - `query` on `src/main.go`
+- `symbols.overview` on `src/main.go`
+- stdio server mode request streaming
 
 The build no longer compiles `tree-sitter-cli` locally. It downloads the official upstream release binary for the current platform and uses Bun as the JavaScript runtime for `tree-sitter generate`.
 
@@ -176,6 +183,10 @@ For grammars that depend on JavaScript packages, the build runs `bun install --i
 `system.describe`
 
 Returns executable metadata, cache location, supported languages, and currently implemented methods.
+
+`index.status`
+
+Returns the configured roots plus cache metadata such as the last query and the last symbol overview summary when present.
 
 `roots.add`
 
@@ -209,3 +220,33 @@ Removes one or more registered roots.
 ```
 
 The `query` method parses every matching file under the selected roots and returns the captured nodes with byte offsets, points, kinds, and captured text.
+
+`symbols.overview`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":1,
+  "method":"symbols.overview",
+  "params":{
+    "language":"go",
+    "roots":["C:/repo"],
+    "include":"**/*.go",
+    "exclude":"**/vendor/**",
+    "max_symbols":200
+  }
+}
+```
+
+Returns a high-level symbol inventory for matching files, including symbol kind, name, container, signature preview, and byte/point ranges. This is intended as the fast, agent-friendly entry point before falling back to raw Tree-sitter queries.
+
+## Agent skill
+
+[`SKILL.md`](C:/Users/Michele/Desktop/ceretree/SKILL.md) documents how an AI agent can use `ceretree` efficiently.
+
+Recommended flow:
+
+- start with `system.describe`
+- inspect `index.status`
+- use `symbols.overview` for broad navigation
+- use `query` for low-level or unusual cases where the high-level RPCs are not enough
