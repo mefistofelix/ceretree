@@ -10,3 +10,5 @@ code base piccole o anche più grandi e in vari linguaggi es wordpress redis
 va lasciata la funzionalità di query grezze multifile etc e va spegato anche nello 
 skill cos' l'agent se vuole fare qualcosa di particolare può andare più a basso livello
 
+il file skill deve spiegare bene le motivazioni le funzionalità come chiamare il server come e quando farlo partire e 
+stoppare se usare curl o altro per interrogarlo esempi di risposte del server etc
