@@ -106,7 +106,7 @@ while IFS='|' read -r language repo revision location needs_npm; do
     git clone --filter=blob:none --no-checkout "$repo" "$repo_dir"
   fi
   git -C "$repo_dir" fetch --depth 1 origin "$revision"
-  git -C "$repo_dir" checkout --force "$revision"
+  git -C "$repo_dir" checkout --force FETCH_HEAD
 
   grammar_dir="$repo_dir"
   if [ "$location" != "." ]; then

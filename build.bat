@@ -155,7 +155,7 @@ if not exist "%REPO_DIR%\.git" (
 )
 
 git -C "%REPO_DIR%" fetch --depth 1 origin "%REVISION%" || exit /b 1
-git -C "%REPO_DIR%" checkout --force "%REVISION%" || exit /b 1
+git -C "%REPO_DIR%" checkout --force FETCH_HEAD || exit /b 1
 
 set "GRAMMAR_DIR=%REPO_DIR%"
 if not "%LOCATION%"=="." set "GRAMMAR_DIR=%REPO_DIR%\%LOCATION%"

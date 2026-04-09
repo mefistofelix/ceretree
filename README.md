@@ -43,7 +43,7 @@ The build is intentionally self-bootstrapping and always regenerates grammar C s
 The pipeline is:
 
 1. bootstrap portable toolchains into `build_cache/`
-2. fetch pinned grammar repositories from `GRAMMARS.txt`
+2. fetch grammar repositories from `GRAMMARS.txt`
 3. install grammar-local JS dependencies with Bun when required
    using `bun install --ignore-scripts` because grammar generation only needs package resolution, not native Node addon build hooks
 4. run `tree-sitter generate` for every grammar on every build
@@ -77,21 +77,23 @@ Portable tool state is stored under:
 
 ## Grammar manifest
 
-Pinned grammar repositories live in [`GRAMMARS.txt`](C:/Users/Michele/Desktop/ceretree/GRAMMARS.txt).
+Grammar repository selections live in [`GRAMMARS.txt`](C:/Users/Michele/Desktop/ceretree/GRAMMARS.txt).
 
 Each line is:
 
 ```text
-language|repo_url|commit|subdirectory|needs_bun
+language|repo_url|revision|subdirectory|needs_bun
 ```
 
 Meaning:
 
 - `language`: RPC language id and generated registry key
 - `repo_url`: grammar repository
-- `commit`: pinned revision fetched during build
+- `revision`: git revision fetched during build, typically `HEAD` in the current floating setup
 - `subdirectory`: grammar root inside the repository, `.` when the repo root is the grammar root
 - `needs_bun`: `1` when the grammar repo needs JS package installation before `tree-sitter generate`
+
+The current manifest intentionally uses floating `HEAD` revisions. This keeps grammar updates automatic, but it also means builds are not fully reproducible across different dates.
 
 ## Build
 
