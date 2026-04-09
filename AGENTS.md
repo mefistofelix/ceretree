@@ -93,5 +93,7 @@
 
 - for rust download and use rustup install it standalone obviusly inside che build_cache subfolder
 
-- once chosen a scripting lang never mix bat sh or powershell,
+- once chosen a shell scripting lang for build or test never mix bat sh or powershell,
   if we have a bat file for example don't interlacciate ps1 files, rewrite the stack in bat if che code is our
+- dont use complex shell scripts structure follow CODE_STYLE.md also in this case but keep the code linear
+  no labels for bat no functions for powershell bash etc, linear code from to to bottom
