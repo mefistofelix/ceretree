@@ -11,7 +11,7 @@ The current implementation provides:
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary
 - incremental grammar regeneration through `tree-sitter-cli` only when the cached grammar inputs change
-- portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries
+- portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries fetched directly from upstream release URLs
 
 Current supported grammars:
 
@@ -43,7 +43,7 @@ The build is intentionally self-bootstrapping and incrementally reuses grammar w
 The pipeline is:
 
 1. bootstrap portable toolchains into `build_cache/`
-2. resolve each grammar ref from `src/GRAMMARS.txt` to a concrete GitHub commit and download a source snapshot archive
+2. resolve each grammar ref from `src/GRAMMARS.txt` to a concrete commit with `git ls-remote` and download a source snapshot archive from GitHub codeload
 3. install grammar-repo and grammar-local JS dependencies with Bun when required
    using `bun install --ignore-scripts` because grammar generation only needs package resolution, not native Node addon build hooks
 4. run `tree-sitter generate` only when the cached grammar generation sentinel is stale
@@ -140,7 +140,7 @@ Linux optional targets:
 ./build.sh all
 ```
 
-CI publishes the successful branch build artifacts to the rolling GitHub prerelease tag `edge` as:
+CI uploads the successful branch build artifacts to the existing rolling GitHub prerelease `edge` as:
 
 - `ceretree-windows-x64.exe`
 - `ceretree-linux-x64`

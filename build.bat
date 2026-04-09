@@ -71,14 +71,14 @@ if not exist "%ZIG_EXE%" (
 
 if not exist "%BUN_EXE%" (
   echo [ceretree] bootstrap bun %BUN_VERSION%
-  gh release download "%BUN_VERSION%" -R oven-sh/bun -p "bun-windows-x64.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
+  curl.exe -fsSL "https://github.com/oven-sh/bun/releases/download/%BUN_VERSION%/bun-windows-x64.zip" -o "%BUN_ZIP%" || goto :fail
   if exist "%BUN_DIR%" rmdir /s /q "%BUN_DIR%"
   tar.exe -xf "%BUN_ZIP%" -C "%TOOLCHAINS_DIR%" || goto :fail
 )
 
 if not exist "%TREE_SITTER_EXE%" (
   echo [ceretree] bootstrap tree-sitter-cli %TREE_SITTER_VERSION%
-  gh release download "%TREE_SITTER_VERSION%" -R tree-sitter/tree-sitter -p "tree-sitter-cli-windows-x64.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
+  curl.exe -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/%TREE_SITTER_VERSION%/tree-sitter-cli-windows-x64.zip" -o "%TREE_SITTER_ZIP%" || goto :fail
   if exist "%ROOT%\build_cache\tools\tree-sitter-cli" rmdir /s /q "%ROOT%\build_cache\tools\tree-sitter-cli"
   mkdir "%ROOT%\build_cache\tools\tree-sitter-cli\bin" || goto :fail
   tar.exe -xf "%TREE_SITTER_ZIP%" -C "%ROOT%\build_cache\tools\tree-sitter-cli\bin" || goto :fail
@@ -256,7 +256,6 @@ set "ARCHIVE_ZIP=%DOWNLOADS_DIR%\grammar_%LANGUAGE%.zip"
 set "ARCHIVE_TMP=%GRAMMAR_ROOT%\%LANGUAGE%\archive_tmp"
 set "REPO_SLUG="
 set "RESOLVED_REVISION=%REVISION%"
-set "DEFAULT_BRANCH="
 
 if not exist "%STATE_DIR%" mkdir "%STATE_DIR%" || exit /b 1
 
@@ -264,11 +263,16 @@ set "REPO_SLUG=%REPO:https://github.com/=%"
 if "%REPO_SLUG:~-1%"=="/" set "REPO_SLUG=%REPO_SLUG:~0,-1%"
 echo [ceretree] grammar %LANGUAGE% resolve ref
 if "%REVISION%"=="HEAD" (
-  for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!" --jq ".default_branch"`) do set "DEFAULT_BRANCH=%%A"
-  if not defined DEFAULT_BRANCH exit /b 1
-  for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!/commits/!DEFAULT_BRANCH!" --jq ".sha"`) do set "RESOLVED_REVISION=%%A"
+  set "RESOLVED_REVISION="
+  for /f "usebackq tokens=1" %%A in (`git ls-remote "!REPO!" HEAD`) do (
+    if not defined RESOLVED_REVISION set "RESOLVED_REVISION=%%A"
+  )
 ) else (
-  for /f "usebackq delims=" %%A in (`gh api "repos/!REPO_SLUG!/commits/!REVISION!" --jq ".sha"`) do set "RESOLVED_REVISION=%%A"
+  set "RESOLVED_REVISION="
+  for /f "usebackq tokens=1" %%A in (`git ls-remote "!REPO!" "!REVISION!"`) do (
+    if not defined RESOLVED_REVISION set "RESOLVED_REVISION=%%A"
+  )
+  if not defined RESOLVED_REVISION set "RESOLVED_REVISION=%REVISION%"
 )
 if not defined RESOLVED_REVISION exit /b 1
 
@@ -282,7 +286,7 @@ goto :fetch_done
 echo [ceretree] grammar %LANGUAGE% download snapshot
 if exist "%ARCHIVE_TMP%" rmdir /s /q "%ARCHIVE_TMP%"
 mkdir "%ARCHIVE_TMP%" || exit /b 1
-curl.exe -fsSL "https://github.com/%REPO_SLUG%/archive/%RESOLVED_REVISION%.zip" -o "%ARCHIVE_ZIP%" || exit /b 1
+curl.exe -fsSL "https://codeload.github.com/%REPO_SLUG%/zip/%RESOLVED_REVISION%" -o "%ARCHIVE_ZIP%" || exit /b 1
 tar.exe -xf "%ARCHIVE_ZIP%" -C "%ARCHIVE_TMP%" || exit /b 1
 if exist "%REPO_DIR%" rmdir /s /q "%REPO_DIR%"
 for /d %%D in ("%ARCHIVE_TMP%\*") do (

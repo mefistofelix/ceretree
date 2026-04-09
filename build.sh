@@ -125,11 +125,12 @@ while IFS='|' read -r language repo revision location needs_npm; do
   mkdir -p "$state_dir"
 
   if [ "$revision" = "HEAD" ]; then
-    default_branch="$(gh api "repos/$repo_slug" --jq ".default_branch")"
-    [ -n "$default_branch" ] || exit 1
-    resolved_revision="$(gh api "repos/$repo_slug/commits/$default_branch" --jq ".sha")"
+    resolved_revision="$(git ls-remote "$repo" HEAD | awk 'NR == 1 { print $1 }')"
   else
-    resolved_revision="$(gh api "repos/$repo_slug/commits/$revision" --jq ".sha")"
+    resolved_revision="$(git ls-remote "$repo" "$revision" | awk 'NR == 1 { print $1 }')"
+    if [ -z "$resolved_revision" ]; then
+      resolved_revision="$revision"
+    fi
   fi
   [ -n "$resolved_revision" ] || exit 1
 
@@ -137,7 +138,7 @@ while IFS='|' read -r language repo revision location needs_npm; do
     echo "[ceretree] grammar $language download snapshot"
     rm -rf "$archive_tmp" "$repo_dir"
     mkdir -p "$archive_tmp"
-    gh api "repos/$repo_slug/zipball/$resolved_revision" >"$archive_zip"
+    curl -fsSL "https://codeload.github.com/$repo_slug/zip/$resolved_revision" -o "$archive_zip"
     unzip -qo "$archive_zip" -d "$archive_tmp"
     extracted_dir="$(find "$archive_tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "$extracted_dir" ] || exit 1

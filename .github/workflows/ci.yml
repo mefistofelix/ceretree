@@ -26,6 +26,5 @@ jobs:
       - run: mkdir -p dist
       - run: cp bin/ceretree dist/ceretree-linux-x64
       - run: cp bin/ceretree.exe dist/ceretree-windows-x64.exe
-      - run: gh api "repos/${{ github.repository }}/git/refs/tags/edge" >/dev/null 2>&1 && gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/edge" -f sha="${{ github.sha }}" -F force=true || gh api -X POST "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/edge" -f sha="${{ github.sha }}"
-      - run: gh release view edge >/dev/null 2>&1 || gh release create edge --title edge --notes "Automated rolling prerelease from ci." --prerelease --latest=false || gh release view edge >/dev/null 2>&1
+      - run: gh release view edge >/dev/null
       - run: gh release upload edge dist/ceretree-linux-x64 dist/ceretree-windows-x64.exe --clobber
