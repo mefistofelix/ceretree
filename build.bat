@@ -7,7 +7,9 @@ if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 set "GO_VERSION=1.26.2"
 set "ZIG_VERSION=0.15.2"
 set "BUN_VERSION=bun-v1.3.11"
-set "TARGET_TRIPLE=x86_64-pc-windows-gnu"
+set "MSVC_VERSION=14.44.17.14"
+set "SDK_VERSION=10.0.22621.7"
+set "TARGET_TRIPLE=x86_64-pc-windows-msvc"
 
 set "DOWNLOADS_DIR=%ROOT%\build_cache\downloads"
 set "TOOLCHAINS_DIR=%ROOT%\build_cache\toolchains"
@@ -21,6 +23,10 @@ set "ZIG_ZIP=%DOWNLOADS_DIR%\zig-x86_64-windows-%ZIG_VERSION%.zip"
 set "BUN_DIR=%TOOLCHAINS_DIR%\bun-windows-x64"
 set "BUN_EXE=%BUN_DIR%\bun.exe"
 set "BUN_ZIP=%DOWNLOADS_DIR%\bun-windows-x64.zip"
+set "MSVCUP_DIR=%ROOT%\build_cache\tools\msvcup"
+set "MSVCUP_EXE=%MSVCUP_DIR%\msvcup.exe"
+set "MSVCUP_ZIP=%DOWNLOADS_DIR%\msvcup-x86_64-windows.zip"
+set "MSVC_INSTALL_DIR=%ROOT%\build_cache\msvc"
 set "RUSTUP_HOME=%ROOT%\build_cache\rustup"
 set "CARGO_HOME=%ROOT%\build_cache\cargo"
 set "RUSTUP_INIT=%DOWNLOADS_DIR%\rustup-init.exe"
@@ -35,7 +41,7 @@ set "LIB_DIR=%GENERATED_DIR%\lib"
 set "LIB_FILE=%LIB_DIR%\ceretree_grammars.a"
 set "OBJECTS="
 
-for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%RUSTUP_HOME%" "%CARGO_HOME%" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
+for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%MSVCUP_DIR%" "%RUSTUP_HOME%" "%CARGO_HOME%" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
   if not exist "%%~D" mkdir "%%~D"
 )
 
@@ -57,14 +63,33 @@ if not exist "%BUN_EXE%" (
   tar.exe -xf "%BUN_ZIP%" -C "%TOOLCHAINS_DIR%" || goto :fail
 )
 
+if not exist "%MSVCUP_EXE%" (
+  gh release download v2026_03_02 -R marler8997/msvcup -p "msvcup-x86_64-windows.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
+  tar.exe -xf "%MSVCUP_ZIP%" -C "%MSVCUP_DIR%" || goto :fail
+)
+
+if not exist "%MSVC_INSTALL_DIR%\vcvars-x64.bat" (
+  "%MSVCUP_EXE%" install --manifest-update-off "%MSVC_INSTALL_DIR%" autoenv msvc-%MSVC_VERSION% sdk-%SDK_VERSION% || goto :fail
+)
+
 set "PATH=%GO_DIR%\bin;%BUN_DIR%;%CARGO_HOME%\bin;%PATH%"
 set "RUSTUP_HOME=%RUSTUP_HOME%"
 set "CARGO_HOME=%CARGO_HOME%"
+call "%MSVC_INSTALL_DIR%\vcvars-x64.bat" || goto :fail
 
 if not exist "%CARGO_HOME%\bin\rustup.exe" (
-  curl.exe -fsSL "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-gnu/rustup-init.exe" -o "%RUSTUP_INIT%" || goto :fail
+  curl.exe -fsSL "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe" -o "%RUSTUP_INIT%" || goto :fail
   "%RUSTUP_INIT%" -y --profile minimal --default-toolchain none --no-modify-path || goto :fail
 )
+
+rustup run stable-%TARGET_TRIPLE% rustc -vV >nul 2>nul
+if errorlevel 1 (
+  rustup toolchain uninstall stable-%TARGET_TRIPLE% >nul 2>nul
+  rustup toolchain install stable-%TARGET_TRIPLE% --profile minimal || goto :fail
+)
+rustup default stable-%TARGET_TRIPLE% || goto :fail
+
+if not exist "%TREE_SITTER_EXE%" cargo install --locked --no-default-features tree-sitter-cli --root "%ROOT%\build_cache\tools\tree-sitter-cli" || goto :fail
 
 >"%WRAPPER_DIR%\zig-cc.cmd" (
   echo @echo off
@@ -75,19 +100,9 @@ if not exist "%CARGO_HOME%\bin\rustup.exe" (
   echo "%ZIG_EXE%" c++ -target x86_64-windows-gnu %%*
 )
 
-set "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=%WRAPPER_DIR%\zig-cc.cmd"
 set "CC=%WRAPPER_DIR%\zig-cc.cmd"
 set "CXX=%WRAPPER_DIR%\zig-cxx.cmd"
 set "CGO_ENABLED=1"
-
-rustup run stable-%TARGET_TRIPLE% rustc -vV >nul 2>nul
-if errorlevel 1 (
-  rustup toolchain uninstall stable-%TARGET_TRIPLE% >nul 2>nul
-  rustup toolchain install stable-%TARGET_TRIPLE% --profile minimal || goto :fail
-)
-rustup default stable-%TARGET_TRIPLE% || goto :fail
-
-if not exist "%TREE_SITTER_EXE%" cargo install --locked tree-sitter-cli --root "%ROOT%\build_cache\tools\tree-sitter-cli" || goto :fail
 
 if exist "%OBJ_DIR%" del /q "%OBJ_DIR%\*" >nul 2>nul
 if exist "%LIB_FILE%" del /q "%LIB_FILE%" >nul 2>nul
@@ -147,12 +162,12 @@ if not "%LOCATION%"=="." set "GRAMMAR_DIR=%REPO_DIR%\%LOCATION%"
 
 if "%NEEDS_BUN%"=="1" if exist "%GRAMMAR_DIR%\package.json" (
   pushd "%GRAMMAR_DIR%" || exit /b 1
-  "%BUN_EXE%" install || exit /b 1
+  "%BUN_EXE%" install --ignore-scripts || exit /b 1
   popd
 )
 
 pushd "%GRAMMAR_DIR%" || exit /b 1
-"%TREE_SITTER_EXE%" generate --js-runtime "%BUN_EXE%" || exit /b 1
+"%TREE_SITTER_EXE%" generate --js-runtime bun || exit /b 1
 popd
 
 if not exist "%GRAMMAR_DIR%\src\parser.c" exit /b 1

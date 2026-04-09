@@ -83,7 +83,7 @@ fi
 rustup default "stable-$TARGET_TRIPLE"
 
 if [ ! -x "$TREE_SITTER_BIN" ]; then
-  cargo install --locked tree-sitter-cli --root "$ROOT/build_cache/tools/tree-sitter-cli"
+  cargo install --locked --no-default-features tree-sitter-cli --root "$ROOT/build_cache/tools/tree-sitter-cli"
 fi
 
 rm -f "$OBJ_DIR"/* "$SRC_DIR"/ceretree_grammars.c "$INC_DIR"/ceretree_grammars.h "$LIB_DIR"/libceretree_grammars.a
@@ -114,10 +114,10 @@ while IFS='|' read -r language repo revision location needs_npm; do
   fi
 
   if [ "$needs_npm" = "1" ] && [ -f "$grammar_dir/package.json" ]; then
-    (cd "$grammar_dir" && "$BUN_BIN" install)
+    (cd "$grammar_dir" && "$BUN_BIN" install --ignore-scripts)
   fi
 
-  (cd "$grammar_dir" && "$TREE_SITTER_BIN" generate --js-runtime "$BUN_BIN")
+  (cd "$grammar_dir" && "$TREE_SITTER_BIN" generate --js-runtime bun)
 
   parser_file="$grammar_dir/src/parser.c"
   if [ ! -f "$parser_file" ]; then

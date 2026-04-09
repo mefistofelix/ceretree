@@ -45,6 +45,7 @@ The pipeline is:
 1. bootstrap portable toolchains into `build_cache/`
 2. fetch pinned grammar repositories from `GRAMMARS.txt`
 3. install grammar-local JS dependencies with Bun when required
+   using `bun install --ignore-scripts` because grammar generation only needs package resolution, not native Node addon build hooks
 4. run `tree-sitter generate` for every grammar on every build
 5. compile generated `parser.c` plus optional `scanner.c` or `scanner.cc` with Zig
 6. build a local static grammar registry archive
@@ -59,8 +60,9 @@ This keeps the release binary self-contained while avoiding pre-generated gramma
 - Go `1.26.2`
 - Zig `0.15.2`
 - Bun `1.3.11`
+- `msvcup` with `msvc-14.44.17.14` and `sdk-10.0.22621.7`
 - rustup/cargo
-- `tree-sitter-cli`
+- `tree-sitter-cli` built with `--no-default-features` and driven through Bun
 
 `build.sh` bootstraps the same toolchain set for Linux.
 
@@ -125,16 +127,9 @@ The black-box tests exercise:
 - `roots.add`
 - `query` on `src/main.go`
 
-## Current Windows status
+On Windows, Rust is bootstrapped against a standalone MSVC environment installed in `build_cache/msvc` through `msvcup`, while Zig remains the compiler used for grammar object generation and Go `cgo`.
 
-The current Windows bootstrap is documented but not yet passing end-to-end.
-
-The current failure happens while Cargo tries to compile `tree-sitter-cli` with the Rust GNU Windows target through the Zig linker wrapper. The observed errors are:
-
-- missing `msvcrt`
-- missing `dlltool.exe`
-
-So the Windows build pipeline is implemented and reproducible up to that exact failure point, but it is not yet fully working.
+The local `tree-sitter-cli` install intentionally disables the optional native QuickJS runtime. Every grammar regeneration step runs `tree-sitter generate --js-runtime <bun>`, so parser generation still works without the extra `libclang` dependency chain that the native QuickJS feature would pull into the Windows bootstrap.
 
 ## JSON-RPC methods
 
