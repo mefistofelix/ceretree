@@ -14,7 +14,10 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - run: git init .
+      - run: git remote add origin "https://github.com/${{ github.repository }}.git"
+      - run: git fetch --depth=1 origin "${{ github.sha }}"
+      - run: git checkout --force FETCH_HEAD
       - run: chmod +x build.sh test.sh
       - run: ./build.sh
       - run: ./test.sh
@@ -22,7 +25,14 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - shell: cmd
+        run: git init .
+      - shell: cmd
+        run: git remote add origin https://github.com/%GITHUB_REPOSITORY%.git
+      - shell: cmd
+        run: git fetch --depth=1 origin %GITHUB_SHA%
+      - shell: cmd
+        run: git checkout --force FETCH_HEAD
       - shell: cmd
         run: build.bat
       - shell: cmd
