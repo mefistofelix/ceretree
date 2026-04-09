@@ -140,7 +140,7 @@ Linux optional targets:
 ./build.sh all
 ```
 
-CI uploads the successful branch build artifacts to the existing rolling GitHub prerelease `edge` as:
+CI uploads build artifacts only for an explicit Git tag release. A workflow run triggered by a pushed tag, or a manual run with a tag input, uploads:
 
 - `ceretree-windows-x64.exe`
 - `ceretree-linux-x64`

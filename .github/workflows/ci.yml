@@ -2,10 +2,14 @@ name: ci
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and upload
+        required: true
+        type: string
   push:
-    branches:
-      - master
-      - main
+    tags:
+      - "*"
 
 permissions:
   contents: write
@@ -19,11 +23,19 @@ jobs:
     steps:
       - run: git init .
       - run: git remote add origin "https://github.com/${{ github.repository }}.git"
-      - run: git fetch --depth=1 origin "${{ github.sha }}"
+      - run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "CI_REF=refs/tags/${{ inputs.tag }}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
+          else
+            echo "CI_REF=${{ github.ref }}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=${{ github.ref_name }}" >> "$GITHUB_ENV"
+          fi
+      - run: git fetch --depth=1 origin "$CI_REF"
       - run: git checkout --force FETCH_HEAD
       - run: chmod +x build.sh
       - run: ./build.sh all
       - run: mkdir -p dist
       - run: cp bin/ceretree dist/ceretree-linux-x64
       - run: cp bin/ceretree.exe dist/ceretree-windows-x64.exe
-      - run: gh release upload edge dist/ceretree-linux-x64 dist/ceretree-windows-x64.exe --clobber
+      - run: gh release upload "$RELEASE_TAG" dist/ceretree-linux-x64 dist/ceretree-windows-x64.exe --clobber
