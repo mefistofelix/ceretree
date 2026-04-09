@@ -57,6 +57,11 @@ if errorlevel 1 exit /b 1
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const calls = data.result.files.flatMap(file => file.calls); if (calls.some(call => call.callee === 'invalid_params')) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
+>"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":72,"method":"references.find","params":{"language":"go","name":"dispatch","roots":["%JSON_ROOT%"],"include":"src/main.go"}}
+"%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const refs = data.result.files.flatMap(file => file.references); if (refs.some(ref => ref.name === 'dispatch')) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
+if errorlevel 1 exit /b 1
+
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":71,"method":"calls.find","params":{"language":"go","roots":["%JSON_ROOT%"],"include":"src/main.go","limit":1}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit === 1 && data.result.summary.files_returned <= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
@@ -65,6 +70,11 @@ if errorlevel 1 exit /b 1
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":8,"method":"query.common","params":{"language":"go","preset":"functions.by_name","name":"handle_query","roots":["%JSON_ROOT%"],"include":"src/main.go"}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const symbols = data.result.files.flatMap(file => file.symbols); if (symbols.some(symbol => symbol.name === 'handle_query')) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
+if errorlevel 1 exit /b 1
+
+>"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":82,"method":"query.common","params":{"language":"go","preset":"references.by_name","name":"dispatch","roots":["%JSON_ROOT%"],"include":"src/main.go"}}
+"%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const refs = data.result.files.flatMap(file => file.references); if (refs.some(ref => ref.name === 'dispatch')) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":81,"method":"query","params":{"language":"go","query":"(identifier) @name","roots":["%JSON_ROOT%"],"include":"src/main.go","limit":1}}

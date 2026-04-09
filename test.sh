@@ -32,11 +32,17 @@ printf '%s' "$PAGE_SYMBOLS_JSON" | "$BUN_BIN" -e "const fs = require('node:fs');
 CALLS_JSON="$("$EXE" "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"calls.find\",\"params\":{\"language\":\"go\",\"callee\":\"invalid_params\",\"roots\":[\"$ROOT\"],\"include\":\"src/main.go\"}}")"
 printf '%s' "$CALLS_JSON" | "$BUN_BIN" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const calls = data.result.files.flatMap(file => file.calls); if (!calls.some(call => call.callee === 'invalid_params')) process.exit(1);"
 
+REFERENCES_JSON="$("$EXE" "{\"jsonrpc\":\"2.0\",\"id\":72,\"method\":\"references.find\",\"params\":{\"language\":\"go\",\"name\":\"dispatch\",\"roots\":[\"$ROOT\"],\"include\":\"src/main.go\"}}")"
+printf '%s' "$REFERENCES_JSON" | "$BUN_BIN" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const refs = data.result.files.flatMap(file => file.references); if (!refs.some(ref => ref.name === 'dispatch')) process.exit(1);"
+
 PAGE_CALLS_JSON="$("$EXE" "{\"jsonrpc\":\"2.0\",\"id\":71,\"method\":\"calls.find\",\"params\":{\"language\":\"go\",\"roots\":[\"$ROOT\"],\"include\":\"src/main.go\",\"limit\":1}}")"
 printf '%s' "$PAGE_CALLS_JSON" | "$BUN_BIN" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); if (data.result.summary.limit !== 1) process.exit(1); if (data.result.summary.files_returned > 1) process.exit(1);"
 
 COMMON_JSON="$("$EXE" "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"query.common\",\"params\":{\"language\":\"go\",\"preset\":\"functions.by_name\",\"name\":\"handle_query\",\"roots\":[\"$ROOT\"],\"include\":\"src/main.go\"}}")"
 printf '%s' "$COMMON_JSON" | "$BUN_BIN" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const symbols = data.result.files.flatMap(file => file.symbols); if (!symbols.some(symbol => symbol.name === 'handle_query')) process.exit(1);"
+
+COMMON_REFERENCES_JSON="$("$EXE" "{\"jsonrpc\":\"2.0\",\"id\":82,\"method\":\"query.common\",\"params\":{\"language\":\"go\",\"preset\":\"references.by_name\",\"name\":\"dispatch\",\"roots\":[\"$ROOT\"],\"include\":\"src/main.go\"}}")"
+printf '%s' "$COMMON_REFERENCES_JSON" | "$BUN_BIN" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const refs = data.result.files.flatMap(file => file.references); if (!refs.some(ref => ref.name === 'dispatch')) process.exit(1);"
 
 PAGE_QUERY_JSON="$("$EXE" "{\"jsonrpc\":\"2.0\",\"id\":81,\"method\":\"query\",\"params\":{\"language\":\"go\",\"query\":\"(identifier) @name\",\"roots\":[\"$ROOT\"],\"include\":\"src/main.go\",\"limit\":1}}")"
 printf '%s' "$PAGE_QUERY_JSON" | "$BUN_BIN" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); if (data.result.summary.limit !== 1) process.exit(1); if (data.result.summary.files_returned > 1) process.exit(1);"

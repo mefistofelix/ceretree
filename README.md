@@ -16,6 +16,7 @@ The current implementation provides:
 - Tree-sitter query execution against grammars statically linked into the final binary
 - symbol overview extraction for common agent navigation workflows
 - symbol filtering by name and kind for fast codebase lookup
+- syntactic reference search for identifier and selector-style usages across many files
 - callsite discovery for common function and method usage exploration
 - common high-level query presets for agent-friendly workflows
 - result paging through `limit` and `offset` on exploration RPCs, with `limit` defaulting to `100`
@@ -177,6 +178,7 @@ The black-box tests exercise:
 - `query` on `src/main.go`
 - `symbols.overview` on `src/main.go`
 - `symbols.find` on `src/main.go`
+- `references.find` on `src/main.go`
 - `calls.find` on `src/main.go`
 - `query.common` on `src/main.go`
 - one-shot stdin with UTF-8 BOM
@@ -285,6 +287,7 @@ Provides higher-level preset searches for common agent workflows. Current preset
 
 - `functions.by_name`
 - `types.by_name`
+- `references.by_name`
 - `calls.by_name`
 
 `symbols.overview`
@@ -349,6 +352,27 @@ Filters the symbol inventory by name and optional kinds. `match_mode` currently 
 
 Finds call expressions by callee text across matching files and returns the matched expression plus byte and point ranges. `limit` and `offset` page the returned file list, and `limit` defaults to `100`.
 
+`references.find`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":1,
+  "method":"references.find",
+  "params":{
+    "language":"go",
+    "name":"dispatch",
+    "roots":["C:/repo"],
+    "include":"**/*.go",
+    "match_mode":"exact",
+    "limit":20,
+    "offset":0
+  }
+}
+```
+
+Finds syntactic references by identifier-like node text across matching files and returns the matched expression plus byte and point ranges. This is intentionally a fast Tree-sitter-based search, not a semantic LSP reference engine. `limit` and `offset` page the returned file list, and `limit` defaults to `100`.
+
 ## Agent skill
 
 [`src/SKILL.md`](C:/Users/Michele/Desktop/ceretree/src/SKILL.md) documents how an AI agent can use `ceretree` efficiently.
@@ -359,7 +383,7 @@ Recommended flow:
 - inspect `index.status`
 - use `symbols.overview` for broad navigation
 - use `symbols.find` for named symbol lookup
-- use `calls.find` or `query.common` for common usage patterns
+- use `references.find`, `calls.find`, or `query.common` for common usage patterns
 - use `limit` and `offset` on large codebases to page through broad results instead of pulling everything at once
 - use `query` for low-level or unusual cases where the high-level RPCs are not enough
 - for persistent workflows, prefer `--server unix://...` plus `curl` or `curl.exe`

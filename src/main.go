@@ -27,7 +27,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.4.1"
+const version = "0.5.0"
 
 var supported_languages = []string{
 	"bash",
@@ -129,6 +129,19 @@ type calls_find_params struct {
 	Offset    int             `json:"offset"`
 }
 
+type references_find_params struct {
+	Language      string          `json:"language"`
+	Name          string          `json:"name"`
+	Kinds         []string        `json:"kinds"`
+	Roots         []string        `json:"roots"`
+	Include       json.RawMessage `json:"include"`
+	Exclude       json.RawMessage `json:"exclude"`
+	MatchMode     string          `json:"match_mode"`
+	MaxReferences int             `json:"max_references"`
+	Limit         int             `json:"limit"`
+	Offset        int             `json:"offset"`
+}
+
 type query_common_params struct {
 	Language  string          `json:"language"`
 	Preset    string          `json:"preset"`
@@ -199,6 +212,23 @@ type call_match struct {
 type point_json struct {
 	Row    uint `json:"row"`
 	Column uint `json:"column"`
+}
+
+type reference_file struct {
+	Path       string            `json:"path"`
+	Root       string            `json:"root"`
+	Relative   string            `json:"relative"`
+	References []reference_match `json:"references"`
+}
+
+type reference_match struct {
+	Name       string     `json:"name"`
+	Kind       string     `json:"kind"`
+	Expression string     `json:"expression"`
+	StartByte  uint       `json:"start_byte"`
+	EndByte    uint       `json:"end_byte"`
+	Start      point_json `json:"start"`
+	End        point_json `json:"end"`
 }
 
 func main() {
@@ -449,6 +479,7 @@ func dispatch(context *runtime_context, request *rpc_request) (any, error) {
 		"query.common":     handle_query_common,
 		"symbols.find":     handle_symbols_find,
 		"symbols.overview": handle_symbols_overview,
+		"references.find":  handle_references_find,
 		"calls.find":       handle_calls_find,
 	}
 
@@ -515,6 +546,7 @@ func handle_system_describe(context *runtime_context, _ json.RawMessage) (any, e
 			"query.common",
 			"symbols.find",
 			"symbols.overview",
+			"references.find",
 			"calls.find",
 		},
 	}, nil
@@ -958,6 +990,82 @@ func handle_calls_find(context *runtime_context, params json.RawMessage) (any, e
 	}, nil
 }
 
+func handle_references_find(context *runtime_context, params json.RawMessage) (any, error) {
+	var parsed references_find_params
+	if err := json.Unmarshal(non_nil_params(params), &parsed); err != nil {
+		return nil, invalid_params("references.find params must be an object")
+	}
+
+	if strings.TrimSpace(parsed.Language) == "" {
+		return nil, invalid_params("language is required")
+	}
+	if strings.TrimSpace(parsed.Name) == "" {
+		return nil, invalid_params("name is required")
+	}
+
+	language, err := linked_language(parsed.Language)
+	if err != nil {
+		return nil, err
+	}
+
+	parser := tree_sitter.NewParser()
+	defer parser.Close()
+
+	if err := parser.SetLanguage(language); err != nil {
+		return nil, err
+	}
+
+	roots, include_patterns, exclude_patterns, err := decode_search_scope(context, parsed.Roots, parsed.Include, parsed.Exclude)
+	if err != nil {
+		return nil, err
+	}
+
+	started := time.Now().UTC()
+	max_references := parsed.MaxReferences
+	if max_references <= 0 {
+		max_references = 200
+	}
+
+	var files []reference_file
+	var files_scanned int
+	var total_references int
+
+	for _, root := range roots {
+		root_files, scanned, references_found, err := references_root(root, include_patterns, exclude_patterns, parser, parsed.Name, parsed.Kinds, parsed.MatchMode, max_references-total_references)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, root_files...)
+		files_scanned += scanned
+		total_references += references_found
+		if total_references >= max_references {
+			break
+		}
+	}
+
+	total_files := len(files)
+	total_references_before_page := count_references_in_files(files)
+	files = page_reference_files(files, parsed.Offset, parsed.Limit)
+
+	return map[string]any{
+		"roots": roots,
+		"summary": map[string]any{
+			"language":            parsed.Language,
+			"files_scanned":       files_scanned,
+			"files_reported":      total_files,
+			"files_returned":      len(files),
+			"references":          total_references_before_page,
+			"references_returned": count_references_in_files(files),
+			"match_mode":          normalize_match_mode(parsed.MatchMode),
+			"offset":              max(parsed.Offset, 0),
+			"limit":               normalized_limit(parsed.Limit),
+			"started_at":          started.Format(time.RFC3339Nano),
+			"duration_ms":         time.Since(started).Milliseconds(),
+		},
+		"files": files,
+	}, nil
+}
+
 func handle_query_common(context *runtime_context, params json.RawMessage) (any, error) {
 	var parsed query_common_params
 	if err := json.Unmarshal(non_nil_params(params), &parsed); err != nil {
@@ -1009,6 +1117,19 @@ func handle_query_common(context *runtime_context, params json.RawMessage) (any,
 			"max_calls":  parsed.MaxItems,
 			"limit":      parsed.Limit,
 			"offset":     parsed.Offset,
+		})))
+	case "references.by_name":
+		return handle_references_find(context, must_json(params_from_map(map[string]any{
+			"language":       parsed.Language,
+			"name":           parsed.Name,
+			"kinds":          parsed.Kinds,
+			"roots":          parsed.Roots,
+			"include":        parsed.Include,
+			"exclude":        parsed.Exclude,
+			"match_mode":     parsed.MatchMode,
+			"max_references": parsed.MaxItems,
+			"limit":          parsed.Limit,
+			"offset":         parsed.Offset,
 		})))
 	default:
 		return nil, invalid_params(fmt.Sprintf("unsupported preset: %s", parsed.Preset))
@@ -1393,6 +1514,61 @@ func calls_root(
 	return files, files_scanned, total_calls, err
 }
 
+func references_root(
+	root string,
+	include_patterns []string,
+	exclude_patterns []string,
+	parser *tree_sitter.Parser,
+	name string,
+	kinds []string,
+	match_mode string,
+	remaining_references int,
+) ([]reference_file, int, int, error) {
+	var files []reference_file
+	var files_scanned int
+	var total_references int
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walk_err error) error {
+		if walk_err != nil {
+			return walk_err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+
+		if !matches_any(relative, include_patterns, true) || matches_any(relative, exclude_patterns, false) {
+			return nil
+		}
+
+		if total_references >= remaining_references {
+			return io.EOF
+		}
+
+		files_scanned++
+		file_references, err := references_file(path, root, relative, parser, name, kinds, match_mode, remaining_references-total_references)
+		if err != nil {
+			return err
+		}
+		if len(file_references.References) > 0 {
+			files = append(files, file_references)
+			total_references += len(file_references.References)
+		}
+		return nil
+	})
+
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+
+	return files, files_scanned, total_references, err
+}
+
 func calls_file(
 	path string,
 	root string,
@@ -1421,6 +1597,38 @@ func calls_file(
 		Root:     root,
 		Relative: relative,
 		Calls:    calls,
+	}, nil
+}
+
+func references_file(
+	path string,
+	root string,
+	relative string,
+	parser *tree_sitter.Parser,
+	name string,
+	kinds []string,
+	match_mode string,
+	remaining_references int,
+) (reference_file, error) {
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return reference_file{}, err
+	}
+
+	tree := parser.Parse(source, nil)
+	if tree == nil {
+		return reference_file{}, fmt.Errorf("tree-sitter parse failed for %s", path)
+	}
+	defer tree.Close()
+
+	var references []reference_match
+	collect_references(source, tree.RootNode(), name, kinds, normalize_match_mode(match_mode), remaining_references, &references)
+
+	return reference_file{
+		Path:       path,
+		Root:       root,
+		Relative:   relative,
+		References: references,
 	}, nil
 }
 
@@ -1498,6 +1706,42 @@ func collect_calls(
 	}
 }
 
+func collect_references(
+	source []byte,
+	node *tree_sitter.Node,
+	name string,
+	kinds []string,
+	match_mode string,
+	remaining_references int,
+	references *[]reference_match,
+) {
+	if node == nil || len(*references) >= remaining_references {
+		return
+	}
+
+	if is_reference_candidate(node.GrammarName()) {
+		reference_name := compact_text(node.Utf8Text(source))
+		if reference_name != "" && matches_text(reference_name, name, match_mode) && !is_definition_name_reference(node, source) && matches_reference_kind(node.GrammarName(), kinds) {
+			*references = append(*references, reference_match{
+				Name:       reference_name,
+				Kind:       node.GrammarName(),
+				Expression: reference_expression(node, source),
+				StartByte:  node.StartByte(),
+				EndByte:    node.EndByte(),
+				Start:      point_from_tree(node.StartPosition()),
+				End:        point_from_tree(node.EndPosition()),
+			})
+		}
+	}
+
+	for index := uint(0); index < node.NamedChildCount(); index++ {
+		collect_references(source, node.NamedChild(index), name, kinds, match_mode, remaining_references, references)
+		if len(*references) >= remaining_references {
+			return
+		}
+	}
+}
+
 func symbol_category(kind string) string {
 	switch kind {
 	case "package_clause", "namespace_definition":
@@ -1533,6 +1777,35 @@ func is_call_kind(kind string) bool {
 		return true
 	}
 	return false
+}
+
+func is_reference_candidate(kind string) bool {
+	return is_identifier_kind(kind)
+}
+
+func is_definition_name_reference(node *tree_sitter.Node, source []byte) bool {
+	parent := node.Parent()
+	for depth := 0; parent != nil && depth < 3; depth++ {
+		if symbol_category(parent.GrammarName()) != "" && symbol_name(parent, source) == compact_text(node.Utf8Text(source)) {
+			return true
+		}
+		parent = parent.Parent()
+	}
+
+	return false
+}
+
+func reference_expression(node *tree_sitter.Node, source []byte) string {
+	parent := node.Parent()
+	for depth := 0; parent != nil && depth < 2; depth++ {
+		text := symbol_signature(parent, source)
+		if text != "" {
+			return text
+		}
+		parent = parent.Parent()
+	}
+
+	return symbol_signature(node, source)
 }
 
 func call_target_text(node *tree_sitter.Node, source []byte) string {
@@ -1655,6 +1928,20 @@ func filter_symbols(
 	return filtered
 }
 
+func matches_reference_kind(kind string, kinds []string) bool {
+	if len(kinds) == 0 {
+		return true
+	}
+
+	for _, allowed := range kinds {
+		if strings.EqualFold(strings.TrimSpace(allowed), kind) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func normalize_match_mode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "exact":
@@ -1766,6 +2053,11 @@ func page_call_files(files []call_file, offset int, limit int) []call_file {
 	return files[start:end]
 }
 
+func page_reference_files(files []reference_file, offset int, limit int) []reference_file {
+	start, end := page_bounds(len(files), offset, limit)
+	return files[start:end]
+}
+
 func count_symbols_in_files(files []symbol_file) int {
 	total := 0
 	for _, file := range files {
@@ -1778,6 +2070,14 @@ func count_calls_in_files(files []call_file) int {
 	total := 0
 	for _, file := range files {
 		total += len(file.Calls)
+	}
+	return total
+}
+
+func count_references_in_files(files []reference_file) int {
+	total := 0
+	for _, file := range files {
+		total += len(file.References)
 	}
 	return total
 }

@@ -16,6 +16,7 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 - Use `index.status` to inspect configured roots and recent cache metadata before issuing expensive searches.
 - Use `symbols.overview` as the default high-level exploration command when you need a broad map of files, functions, methods, classes, interfaces, types, modules, or packages.
 - Use `symbols.find` when you already know the symbol name or want a narrow lookup by kind.
+- Use `references.find` when you want fast syntactic identifier-style usages across many files.
 - Use `calls.find` when you want callsites for a specific callee across many files.
 - Use `query.common` for frequent agent-oriented searches that should stay shorter than raw Tree-sitter queries.
 - Use `query` when you need a precise low-level Tree-sitter search pattern across many files.
@@ -27,7 +28,7 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 2. Call `roots.list` or `roots.add` as needed.
 3. Call `index.status`.
 4. Call `symbols.overview` on a narrow glob first.
-5. Call `symbols.find` or `calls.find` when you already have a candidate name.
+5. Call `symbols.find`, `references.find`, or `calls.find` when you already have a candidate name.
 6. Call `query.common` for common cases that do not need raw query syntax.
 7. Page broad result sets with `limit` and `offset`.
 8. If the result is still too broad or you need a special structural pattern, fall back to `query`.
@@ -88,9 +89,11 @@ Raw `query` remains the escape hatch for:
 - language-specific constructs
 - custom capture sets
 - investigations where a generic symbol overview is too lossy
-- cases where `symbols.find`, `calls.find`, or `query.common` still do not express the exact structure you need
+- cases where `symbols.find`, `references.find`, `calls.find`, or `query.common` still do not express the exact structure you need
 
 LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.overview` first, then use `query` only when the task requires lower-level control.
+
+`references.find` is syntactic, not semantic. Prefer it for fast codebase exploration, but do not treat it as a full cross-language definition/reference engine.
 
 ## Example requests
 
@@ -154,6 +157,24 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
   "params":{
     "language":"go",
     "callee":"invalid_params",
+    "roots":["C:/repo"],
+    "include":"**/*.go",
+    "limit":20,
+    "offset":0
+  }
+}
+```
+
+`references.find`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":55,
+  "method":"references.find",
+  "params":{
+    "language":"go",
+    "name":"dispatch",
     "roots":["C:/repo"],
     "include":"**/*.go",
     "limit":20,
