@@ -1295,7 +1295,7 @@ func save_state(context *runtime_context, state *cache_state) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(context.state_path, data, 0o644)
+	return write_atomic_file(context.state_path, data)
 }
 
 func resolve_roots(context *runtime_context, explicit []string) ([]string, error) {
@@ -2435,7 +2435,7 @@ func save_analysis_cache_entry(context *runtime_context, entry *analysis_cache_e
 		return err
 	}
 
-	return os.WriteFile(analysis_cache_path(context, entry.Language, entry.Path), data, 0o644)
+	return write_atomic_file(analysis_cache_path(context, entry.Language, entry.Path), data)
 }
 
 func analysis_cache_path(context *runtime_context, language_name string, path string) string {
@@ -2560,7 +2560,51 @@ func touch_cache_file(path string, payload any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return write_atomic_file(path, data)
+}
+
+func write_atomic_file(path string, data []byte) error {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+
+	temp_name := fmt.Sprintf(".%s.%d.%d.tmp", filepath.Base(path), os.Getpid(), time.Now().UnixNano())
+	temp_path := filepath.Join(directory, temp_name)
+
+	file, err := os.OpenFile(temp_path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+
+	remove_temp := true
+	defer func() {
+		if remove_temp {
+			_ = os.Remove(temp_path)
+		}
+	}()
+
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(temp_path, path); err != nil {
+		_ = os.Remove(path)
+		if second_err := os.Rename(temp_path, path); second_err != nil {
+			return err
+		}
+	}
+
+	remove_temp = false
+	return nil
 }
 
 func describe_cache_files(cache_dir string, names []string) []map[string]any {
