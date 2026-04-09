@@ -242,7 +242,7 @@ Returns a high-level symbol inventory for matching files, including symbol kind,
 
 ## Agent skill
 
-[`SKILL.md`](C:/Users/Michele/Desktop/ceretree/SKILL.md) documents how an AI agent can use `ceretree` efficiently.
+[`src/SKILL.md`](C:/Users/Michele/Desktop/ceretree/src/SKILL.md) documents how an AI agent can use `ceretree` efficiently.
 
 Recommended flow:
 
