@@ -10,4 +10,3 @@ powershell|https://github.com/airbus-cert/tree-sitter-powershell|HEAD|.|0
 python|https://github.com/tree-sitter/tree-sitter-python|HEAD|.|0
 rust|https://github.com/tree-sitter/tree-sitter-rust|HEAD|.|0
 tsx|https://github.com/tree-sitter/tree-sitter-typescript|HEAD|tsx|1
-typescript|https://github.com/tree-sitter/tree-sitter-typescript|HEAD|typescript|1

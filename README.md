@@ -27,7 +27,8 @@ Current supported grammars:
 - `python`
 - `rust`
 - `tsx`
-- `typescript`
+
+TypeScript support is exposed through the single `tsx` language id in the current slice.
 
 Current scope limits:
 
@@ -169,7 +170,7 @@ The black-box tests exercise:
 
 The build no longer compiles `tree-sitter-cli` locally. It downloads the official upstream release binary for the current platform and uses Bun as the JavaScript runtime for `tree-sitter generate`.
 
-For grammars that depend on JavaScript packages, the build runs `bun install --ignore-scripts` in the grammar repository root and, when present, again in the grammar subdirectory. This matters for multi-grammar repositories such as `tree-sitter-typescript`, where `tsx/grammar.js` resolves dependencies from the repository root.
+For grammars that depend on JavaScript packages, the build runs `bun install --ignore-scripts` in the grammar repository root and, when present, again in the grammar subdirectory. This matters for repositories such as `tree-sitter-typescript`, where `tsx/grammar.js` resolves dependencies from the repository root.
 
 ## JSON-RPC methods
 
