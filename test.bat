@@ -47,6 +47,11 @@ if errorlevel 1 exit /b 1
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const symbols = data.result.files.flatMap(file => file.symbols); if (symbols.some(symbol => symbol.name === 'handle_query')) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"
 if errorlevel 1 exit /b 1
 
+>"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":62,"method":"context.at","params":{"language":"go","path":"src/main.go","roots":["%JSON_ROOT%"],"row":259,"column":10}}
+"%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
+"%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.relative !== 'src/main.go') process.exit(1); if (!Array.isArray(data.result.symbols) || !data.result.symbols.some(symbol => symbol.name === 'run')) process.exit(1); if (!Array.isArray(data.result.blocks) || data.result.blocks.length < 1) process.exit(1); process.exit(0);" "%RESPONSE_FILE%"
+if errorlevel 1 exit /b 1
+
 >"%REQUEST_FILE%" echo {"jsonrpc":"2.0","id":61,"method":"symbols.find","params":{"language":"go","kinds":["function"],"roots":["%JSON_ROOT%"],"include":"src/main.go","limit":1,"offset":1}}
 "%EXE%" <"%REQUEST_FILE%" >"%RESPONSE_FILE%"
 "%BUN_EXE%" -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (data.result.summary.limit === 1 && data.result.summary.offset === 1 && data.result.summary.files_returned <= 1) process.exit(0); process.exit(1);" "%RESPONSE_FILE%"

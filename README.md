@@ -16,6 +16,7 @@ The current implementation provides:
 - Tree-sitter query execution against grammars statically linked into the final binary
 - symbol overview extraction for common agent navigation workflows
 - symbol filtering by name and kind for fast codebase lookup
+- point-in-file context lookup for block and parent symbol discovery before edits
 - syntactic reference search for identifier and selector-style usages across many files
 - callsite discovery for common function and method usage exploration
 - common high-level query presets for agent-friendly workflows
@@ -178,6 +179,7 @@ The black-box tests exercise:
 - `query` on `src/main.go`
 - `symbols.overview` on `src/main.go`
 - `symbols.find` on `src/main.go`
+- `context.at` on `src/main.go`
 - `references.find` on `src/main.go`
 - `calls.find` on `src/main.go`
 - `query.common` on `src/main.go`
@@ -331,6 +333,25 @@ Returns a high-level symbol inventory for matching files, including symbol kind,
 
 Filters the symbol inventory by name and optional kinds. `match_mode` currently supports `exact`, `contains`, `prefix`, `suffix`, and `regex`. `limit` and `offset` page the returned file list, and `limit` defaults to `100`.
 
+`context.at`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":1,
+  "method":"context.at",
+  "params":{
+    "language":"go",
+    "path":"src/main.go",
+    "roots":["C:/repo"],
+    "row":259,
+    "column":10
+  }
+}
+```
+
+Returns the innermost named node at a file coordinate plus enclosing blocks and parent symbols. This is useful before edits when an agent needs to understand which function, method, class, struct, or scope actually contains the target position.
+
 `calls.find`
 
 ```json
@@ -382,6 +403,7 @@ Recommended flow:
 - start with `system.describe`
 - inspect `index.status`
 - use `symbols.overview` for broad navigation
+- use `context.at` before edits when exact block ownership matters
 - use `symbols.find` for named symbol lookup
 - use `references.find`, `calls.find`, or `query.common` for common usage patterns
 - use `limit` and `offset` on large codebases to page through broad results instead of pulling everything at once

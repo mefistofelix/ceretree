@@ -27,7 +27,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 var supported_languages = []string{
 	"bash",
@@ -156,6 +156,14 @@ type query_common_params struct {
 	Offset    int             `json:"offset"`
 }
 
+type context_at_params struct {
+	Language string   `json:"language"`
+	Path     string   `json:"path"`
+	Roots    []string `json:"roots"`
+	Row      int      `json:"row"`
+	Column   int      `json:"column"`
+}
+
 type file_match struct {
 	Path     string          `json:"path"`
 	Root     string          `json:"root"`
@@ -229,6 +237,17 @@ type reference_match struct {
 	EndByte    uint       `json:"end_byte"`
 	Start      point_json `json:"start"`
 	End        point_json `json:"end"`
+}
+
+type node_context struct {
+	Kind        string     `json:"kind"`
+	GrammarKind string     `json:"grammar_kind"`
+	Name        string     `json:"name,omitempty"`
+	Signature   string     `json:"signature,omitempty"`
+	StartByte   uint       `json:"start_byte"`
+	EndByte     uint       `json:"end_byte"`
+	Start       point_json `json:"start"`
+	End         point_json `json:"end"`
 }
 
 func main() {
@@ -477,6 +496,7 @@ func dispatch(context *runtime_context, request *rpc_request) (any, error) {
 		"roots.remove":     handle_roots_remove,
 		"query":            handle_query,
 		"query.common":     handle_query_common,
+		"context.at":       handle_context_at,
 		"symbols.find":     handle_symbols_find,
 		"symbols.overview": handle_symbols_overview,
 		"references.find":  handle_references_find,
@@ -544,6 +564,7 @@ func handle_system_describe(context *runtime_context, _ json.RawMessage) (any, e
 			"roots.remove",
 			"query",
 			"query.common",
+			"context.at",
 			"symbols.find",
 			"symbols.overview",
 			"references.find",
@@ -1136,6 +1157,75 @@ func handle_query_common(context *runtime_context, params json.RawMessage) (any,
 	}
 }
 
+func handle_context_at(context *runtime_context, params json.RawMessage) (any, error) {
+	var parsed context_at_params
+	if err := json.Unmarshal(non_nil_params(params), &parsed); err != nil {
+		return nil, invalid_params("context.at params must be an object")
+	}
+
+	if strings.TrimSpace(parsed.Language) == "" {
+		return nil, invalid_params("language is required")
+	}
+	if strings.TrimSpace(parsed.Path) == "" {
+		return nil, invalid_params("path is required")
+	}
+	if parsed.Row < 0 || parsed.Column < 0 {
+		return nil, invalid_params("row and column must be >= 0")
+	}
+
+	language, err := linked_language(parsed.Language)
+	if err != nil {
+		return nil, err
+	}
+
+	parser := tree_sitter.NewParser()
+	defer parser.Close()
+
+	if err := parser.SetLanguage(language); err != nil {
+		return nil, err
+	}
+
+	file_path, root, relative, err := resolve_context_file(context, parsed.Path, parsed.Roots)
+	if err != nil {
+		return nil, err
+	}
+
+	source, err := os.ReadFile(file_path)
+	if err != nil {
+		return nil, err
+	}
+
+	tree := parser.Parse(source, nil)
+	if tree == nil {
+		return nil, fmt.Errorf("tree-sitter parse failed for %s", file_path)
+	}
+	defer tree.Close()
+
+	target_point := tree_sitter.Point{Row: uint(parsed.Row), Column: uint(parsed.Column)}
+	node := tree.RootNode().NamedDescendantForPointRange(target_point, target_point)
+	if node == nil {
+		node = tree.RootNode()
+	}
+
+	innermost := describe_node_context(node, source)
+	blocks := enclosing_blocks(node, source)
+	symbols := enclosing_symbols(node, source)
+
+	return map[string]any{
+		"language": parsed.Language,
+		"path":     file_path,
+		"root":     root,
+		"relative": relative,
+		"point": map[string]any{
+			"row":    parsed.Row,
+			"column": parsed.Column,
+		},
+		"innermost": innermost,
+		"blocks":    blocks,
+		"symbols":   symbols,
+	}, nil
+}
+
 func linked_language(name string) (*tree_sitter.Language, error) {
 	if !slices.Contains(supported_languages, name) {
 		return nil, invalid_params(fmt.Sprintf("unsupported language: %s", name))
@@ -1460,6 +1550,53 @@ func overview_file(
 	}, nil
 }
 
+func resolve_context_file(context *runtime_context, path string, explicit_roots []string) (string, string, string, error) {
+	if filepath.IsAbs(path) {
+		absolute := filepath.Clean(path)
+		info, err := os.Stat(absolute)
+		if err != nil {
+			return "", "", "", err
+		}
+		if info.IsDir() {
+			return "", "", "", invalid_params("path must be a file, not a directory")
+		}
+
+		roots, err := resolve_roots(context, explicit_roots)
+		if err != nil && !strings.Contains(err.Error(), "no roots configured") {
+			return "", "", "", err
+		}
+
+		best_root := ""
+		best_relative := filepath.Base(absolute)
+		for _, root := range roots {
+			relative, rel_err := filepath.Rel(root, absolute)
+			if rel_err == nil && !strings.HasPrefix(filepath.ToSlash(relative), "../") {
+				best_root = root
+				best_relative = filepath.ToSlash(relative)
+				break
+			}
+		}
+
+		return absolute, best_root, best_relative, nil
+	}
+
+	roots, err := resolve_roots(context, explicit_roots)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	relative := filepath.ToSlash(path)
+	for _, root := range roots {
+		candidate := filepath.Join(root, filepath.FromSlash(relative))
+		info, stat_err := os.Stat(candidate)
+		if stat_err == nil && !info.IsDir() {
+			return filepath.Clean(candidate), root, relative, nil
+		}
+	}
+
+	return "", "", "", invalid_params(fmt.Sprintf("file not found in roots: %s", path))
+}
+
 func calls_root(
 	root string,
 	include_patterns []string,
@@ -1742,6 +1879,49 @@ func collect_references(
 	}
 }
 
+func enclosing_blocks(node *tree_sitter.Node, source []byte) []node_context {
+	var blocks []node_context
+	for current := node; current != nil; current = current.Parent() {
+		if is_block_kind(current.GrammarName()) {
+			blocks = append([]node_context{describe_node_context(current, source)}, blocks...)
+		}
+	}
+	return blocks
+}
+
+func enclosing_symbols(node *tree_sitter.Node, source []byte) []node_context {
+	var symbols []node_context
+	for current := node; current != nil; current = current.Parent() {
+		if symbol_category(current.GrammarName()) != "" {
+			symbols = append([]node_context{describe_node_context(current, source)}, symbols...)
+		}
+	}
+	return symbols
+}
+
+func describe_node_context(node *tree_sitter.Node, source []byte) node_context {
+	return node_context{
+		Kind:        block_or_symbol_kind(node),
+		GrammarKind: node.GrammarName(),
+		Name:        symbol_name(node, source),
+		Signature:   symbol_signature(node, source),
+		StartByte:   node.StartByte(),
+		EndByte:     node.EndByte(),
+		Start:       point_from_tree(node.StartPosition()),
+		End:         point_from_tree(node.EndPosition()),
+	}
+}
+
+func block_or_symbol_kind(node *tree_sitter.Node) string {
+	if kind := symbol_category(node.GrammarName()); kind != "" {
+		return kind
+	}
+	if is_block_kind(node.GrammarName()) {
+		return "block"
+	}
+	return node.Kind()
+}
+
 func symbol_category(kind string) string {
 	switch kind {
 	case "package_clause", "namespace_definition":
@@ -1769,6 +1949,14 @@ func symbol_category(kind string) string {
 	}
 
 	return ""
+}
+
+func is_block_kind(kind string) bool {
+	switch kind {
+	case "block", "statement_block", "compound_statement", "declaration_list", "class_body", "field_declaration_list", "interface_body", "enum_body", "impl_body", "namespace_body", "module_body":
+		return true
+	}
+	return false
 }
 
 func is_call_kind(kind string) bool {

@@ -15,6 +15,7 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 - Use `system.describe` first to discover supported methods, runtime mode, and compiled languages.
 - Use `index.status` to inspect configured roots and recent cache metadata before issuing expensive searches.
 - Use `symbols.overview` as the default high-level exploration command when you need a broad map of files, functions, methods, classes, interfaces, types, modules, or packages.
+- Use `context.at` before edits when you need to know the exact enclosing function, type, or block at a coordinate.
 - Use `symbols.find` when you already know the symbol name or want a narrow lookup by kind.
 - Use `references.find` when you want fast syntactic identifier-style usages across many files.
 - Use `calls.find` when you want callsites for a specific callee across many files.
@@ -28,10 +29,11 @@ Use `ceretree` as a fast code-exploration backend for source trees registered th
 2. Call `roots.list` or `roots.add` as needed.
 3. Call `index.status`.
 4. Call `symbols.overview` on a narrow glob first.
-5. Call `symbols.find`, `references.find`, or `calls.find` when you already have a candidate name.
-6. Call `query.common` for common cases that do not need raw query syntax.
-7. Page broad result sets with `limit` and `offset`.
-8. If the result is still too broad or you need a special structural pattern, fall back to `query`.
+5. Call `context.at` before editing a known location so you understand its containing symbol and scope.
+6. Call `symbols.find`, `references.find`, or `calls.find` when you already have a candidate name.
+7. Call `query.common` for common cases that do not need raw query syntax.
+8. Page broad result sets with `limit` and `offset`.
+9. If the result is still too broad or you need a special structural pattern, fall back to `query`.
 
 ## Preferred persistent server lifecycle
 
@@ -143,6 +145,23 @@ LLMs often do not remember Tree-sitter query syntax perfectly. Prefer `symbols.o
     "include":"**/*.go",
     "limit":20,
     "offset":0
+  }
+}
+```
+
+`context.at`
+
+```json
+{
+  "jsonrpc":"2.0",
+  "id":45,
+  "method":"context.at",
+  "params":{
+    "language":"go",
+    "path":"src/main.go",
+    "roots":["C:/repo"],
+    "row":259,
+    "column":10
   }
 }
 ```
