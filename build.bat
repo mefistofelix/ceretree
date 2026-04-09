@@ -33,13 +33,21 @@ set "SRC_DIR=%GENERATED_DIR%\src"
 set "LIB_DIR=%GENERATED_DIR%\lib"
 set "LIB_FILE=%LIB_DIR%\ceretree_grammars.a"
 set "OBJECTS="
+set "BUILD_MODE=windows"
 set "TARGET_NAME="
 set "TARGET_CC="
 set "TARGET_CXX="
 set "TARGET_GOOS="
 set "TARGET_GOARCH="
 set "TARGET_OUTPUT="
-set "TARGET_CGO_LDFLAGS="
+set "TARGET_EXTRA_LDFLAGS="
+set "TARGET_OBJ_DIR="
+set "TARGET_LIB_FILE="
+
+if /i "%~1"=="windows" set "BUILD_MODE=windows"
+if /i "%~1"=="linux" set "BUILD_MODE=linux"
+if /i "%~1"=="all" set "BUILD_MODE=all"
+if not "%~1"=="" if /i not "%~1"=="windows" if /i not "%~1"=="linux" if /i not "%~1"=="all" exit /b 1
 
 for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%GRAMMAR_STATE_DIR%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
   if not exist "%%~D" mkdir "%%~D"
@@ -114,8 +122,10 @@ for /f "usebackq tokens=1 delims=|" %%A in ("%ROOT%\src\GRAMMARS.txt") do (
 
 "%GOFMT_EXE%" -w "%ROOT%\src\main.go" || goto :fail
 
-call :build_target windows "%WRAPPER_DIR%\zig-cc-windows.cmd" "%WRAPPER_DIR%\zig-cxx-windows.cmd" windows amd64 "%ROOT%\bin\ceretree.exe" "%LIB_FILE%" || goto :fail
-call :build_target linux "%WRAPPER_DIR%\zig-cc-linux.cmd" "%WRAPPER_DIR%\zig-cxx-linux.cmd" linux amd64 "%ROOT%\bin\ceretree" "%LIB_FILE% -static" || goto :fail
+if /i "%BUILD_MODE%"=="windows" call :build_target windows "%WRAPPER_DIR%\zig-cc-windows.cmd" "%WRAPPER_DIR%\zig-cxx-windows.cmd" windows amd64 "%ROOT%\bin\ceretree.exe" "" || goto :fail
+if /i "%BUILD_MODE%"=="linux" call :build_target linux "%WRAPPER_DIR%\zig-cc-linux.cmd" "%WRAPPER_DIR%\zig-cxx-linux.cmd" linux amd64 "%ROOT%\bin\ceretree" "-static" || goto :fail
+if /i "%BUILD_MODE%"=="all" call :build_target windows "%WRAPPER_DIR%\zig-cc-windows.cmd" "%WRAPPER_DIR%\zig-cxx-windows.cmd" windows amd64 "%ROOT%\bin\ceretree.exe" "" || goto :fail
+if /i "%BUILD_MODE%"=="all" call :build_target linux "%WRAPPER_DIR%\zig-cc-linux.cmd" "%WRAPPER_DIR%\zig-cxx-linux.cmd" linux amd64 "%ROOT%\bin\ceretree" "-static" || goto :fail
 exit /b 0
 
 :build_target
@@ -125,27 +135,28 @@ set "TARGET_CXX=%~3"
 set "TARGET_GOOS=%~4"
 set "TARGET_GOARCH=%~5"
 set "TARGET_OUTPUT=%~6"
-set "TARGET_CGO_LDFLAGS=%~7"
+set "TARGET_EXTRA_LDFLAGS=%~7"
+set "TARGET_OBJ_DIR=%OBJ_DIR%\%TARGET_NAME%"
+set "TARGET_LIB_FILE=%LIB_DIR%\ceretree_grammars_%TARGET_NAME%.a"
 set "OBJECTS="
 
-if exist "%OBJ_DIR%" del /q "%OBJ_DIR%\*" >nul 2>nul
-if exist "%LIB_FILE%" del /q "%LIB_FILE%" >nul 2>nul
+if not exist "%TARGET_OBJ_DIR%" mkdir "%TARGET_OBJ_DIR%" || exit /b 1
 
-call "%TARGET_CC%" -c -O2 "-I%INC_DIR%" "%SRC_DIR%\ceretree_grammars.c" "-o%OBJ_DIR%\ceretree_grammars.o" || exit /b 1
-set "OBJECTS=%OBJECTS% "%OBJ_DIR%\ceretree_grammars.o""
+call "%TARGET_CC%" -c -O2 "-I%INC_DIR%" "%SRC_DIR%\ceretree_grammars.c" "-o%TARGET_OBJ_DIR%\ceretree_grammars.o" || exit /b 1
+set "OBJECTS=%OBJECTS% "%TARGET_OBJ_DIR%\ceretree_grammars.o""
 
 for /f "usebackq tokens=1-5 delims=|" %%A in ("%ROOT%\src\GRAMMARS.txt") do (
   call :compile_grammar_objects "%%~A" "%%~D" || exit /b 1
 )
 
-"%ZIG_EXE%" ar rcs "%LIB_FILE%" %OBJECTS% || exit /b 1
+"%ZIG_EXE%" ar rcs "%TARGET_LIB_FILE%" %OBJECTS% || exit /b 1
 
 set "CC=%TARGET_CC%"
 set "CXX=%TARGET_CXX%"
 set "GOOS=%TARGET_GOOS%"
 set "GOARCH=%TARGET_GOARCH%"
 set "CGO_CFLAGS=-I%INC_DIR%"
-set "CGO_LDFLAGS=%TARGET_CGO_LDFLAGS%"
+set "CGO_LDFLAGS=%TARGET_LIB_FILE% %TARGET_EXTRA_LDFLAGS%"
 
 "%GO_EXE%" build -o "%TARGET_OUTPUT%" ./src || exit /b 1
 exit /b 0
@@ -154,19 +165,65 @@ exit /b 0
 set "LANGUAGE=%~1"
 set "LOCATION=%~2"
 set "GRAMMAR_DIR=%GRAMMAR_ROOT%\%LANGUAGE%\repo"
+set "STATE_DIR=%GRAMMAR_STATE_DIR%\%LANGUAGE%"
+set "GENERATE_STAMP=%STATE_DIR%\generate.txt"
+set "GRAMMAR_KEY="
+set "OBJECT_KEY="
+set "PARSER_OBJ=%TARGET_OBJ_DIR%\%LANGUAGE%_parser.o"
+set "PARSER_STAMP=%TARGET_OBJ_DIR%\%LANGUAGE%_parser.stamp"
+set "SCANNER_OBJ=%TARGET_OBJ_DIR%\%LANGUAGE%_scanner.o"
+set "SCANNER_STAMP=%TARGET_OBJ_DIR%\%LANGUAGE%_scanner.stamp"
+set "SCANNER_CC_OBJ=%TARGET_OBJ_DIR%\%LANGUAGE%_scanner_cc.o"
+set "SCANNER_CC_STAMP=%TARGET_OBJ_DIR%\%LANGUAGE%_scanner_cc.stamp"
 if not "%LOCATION%"=="." set "GRAMMAR_DIR=%GRAMMAR_DIR%\%LOCATION%"
 
-call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\parser.c" "-o%OBJ_DIR%\%LANGUAGE%_parser.o" || exit /b 1
-set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_parser.o""
+if not exist "%GENERATE_STAMP%" exit /b 1
+set /p GRAMMAR_KEY=<"%GENERATE_STAMP%"
+set "OBJECT_KEY=%TARGET_NAME%^|%ZIG_VERSION%^|!GRAMMAR_KEY!"
+
+set "DO_PARSER=1"
+if exist "%PARSER_STAMP%" if exist "%PARSER_OBJ%" (
+  set /p PARSER_VALUE=<"%PARSER_STAMP%"
+  if "!PARSER_VALUE!"=="!OBJECT_KEY!" set "DO_PARSER="
+)
+if defined DO_PARSER (
+  call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\parser.c" "-o%PARSER_OBJ%" || exit /b 1
+  >"%PARSER_STAMP%" <nul set /p "=!OBJECT_KEY!"
+)
+set "OBJECTS=%OBJECTS% "%PARSER_OBJ%""
 
 if exist "%GRAMMAR_DIR%\src\scanner.c" (
-  call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.c" "-o%OBJ_DIR%\%LANGUAGE%_scanner.o" || exit /b 1
-  set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_scanner.o""
+  set "DO_SCANNER=1"
+  if exist "%SCANNER_STAMP%" if exist "%SCANNER_OBJ%" (
+    set /p SCANNER_VALUE=<"%SCANNER_STAMP%"
+    if "!SCANNER_VALUE!"=="!OBJECT_KEY!" set "DO_SCANNER="
+  )
+  if defined DO_SCANNER (
+    call "%TARGET_CC%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.c" "-o%SCANNER_OBJ%" || exit /b 1
+    >"%SCANNER_STAMP%" <nul set /p "=!OBJECT_KEY!"
+  )
+  set "OBJECTS=%OBJECTS% "%SCANNER_OBJ%""
+)
+if not exist "%GRAMMAR_DIR%\src\scanner.c" (
+  if exist "%SCANNER_OBJ%" del /q "%SCANNER_OBJ%" >nul 2>nul
+  if exist "%SCANNER_STAMP%" del /q "%SCANNER_STAMP%" >nul 2>nul
 )
 
 if exist "%GRAMMAR_DIR%\src\scanner.cc" (
-  call "%TARGET_CXX%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.cc" "-o%OBJ_DIR%\%LANGUAGE%_scanner_cc.o" || exit /b 1
-  set "OBJECTS=%OBJECTS% "%OBJ_DIR%\%LANGUAGE%_scanner_cc.o""
+  set "DO_SCANNER_CC=1"
+  if exist "%SCANNER_CC_STAMP%" if exist "%SCANNER_CC_OBJ%" (
+    set /p SCANNER_CC_VALUE=<"%SCANNER_CC_STAMP%"
+    if "!SCANNER_CC_VALUE!"=="!OBJECT_KEY!" set "DO_SCANNER_CC="
+  )
+  if defined DO_SCANNER_CC (
+    call "%TARGET_CXX%" -c -O2 "-I%GRAMMAR_DIR%\src" "%GRAMMAR_DIR%\src\scanner.cc" "-o%SCANNER_CC_OBJ%" || exit /b 1
+    >"%SCANNER_CC_STAMP%" <nul set /p "=!OBJECT_KEY!"
+  )
+  set "OBJECTS=%OBJECTS% "%SCANNER_CC_OBJ%""
+)
+if not exist "%GRAMMAR_DIR%\src\scanner.cc" (
+  if exist "%SCANNER_CC_OBJ%" del /q "%SCANNER_CC_OBJ%" >nul 2>nul
+  if exist "%SCANNER_CC_STAMP%" del /q "%SCANNER_CC_STAMP%" >nul 2>nul
 )
 
 exit /b 0

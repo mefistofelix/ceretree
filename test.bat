@@ -1,9 +1,6 @@
 @echo off
 setlocal
 
-call "%~dp0build.bat"
-if errorlevel 1 exit /b 1
-
 set "EXE=%~dp0bin\ceretree.exe"
 set "BUN_EXE=%~dp0build_cache\toolchains\bun-windows-x64\bun.exe"
 set "ROOT=%~dp0"
@@ -11,6 +8,9 @@ set "TESTS_DIR=%~dp0tests_cache"
 set "REQUEST_FILE=%TESTS_DIR%\request.json"
 set "RESPONSE_FILE=%TESTS_DIR%\response.json"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
+
+if not exist "%EXE%" exit /b 1
+if not exist "%BUN_EXE%" exit /b 1
 
 if not exist "%TESTS_DIR%" mkdir "%TESTS_DIR%"
 

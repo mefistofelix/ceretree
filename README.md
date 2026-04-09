@@ -104,21 +104,40 @@ The current manifest intentionally uses floating `HEAD` revisions. Each build re
 
 ## Build
 
-Windows:
+Windows default native build:
 
 ```bat
 build.bat
 ```
 
-Expected outputs:
+Windows optional targets:
+
+```bat
+build.bat windows
+build.bat linux
+build.bat all
+```
+
+Default output:
 
 - `bin\ceretree.exe`
+
+Optional outputs:
+
 - `bin\ceretree` as a static Linux x64 ELF
 
-Linux:
+Linux default native build:
 
 ```sh
 ./build.sh
+```
+
+Linux optional targets:
+
+```sh
+./build.sh linux
+./build.sh windows
+./build.sh all
 ```
 
 CI publishes the successful branch build artifacts to the rolling GitHub prerelease tag `edge` as:
@@ -139,6 +158,8 @@ Linux:
 ```sh
 ./test.sh
 ```
+
+The test entrypoints do not bootstrap the build. Run the appropriate build first, then run the platform test script against the existing binary.
 
 The black-box tests exercise:
 

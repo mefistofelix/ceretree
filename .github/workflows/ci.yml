@@ -22,30 +22,11 @@ jobs:
       - run: git fetch --depth=1 origin "${{ github.sha }}"
       - run: git checkout --force FETCH_HEAD
       - run: chmod +x build.sh
-      - run: ./build.sh
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - shell: cmd
-        run: git init .
-      - shell: cmd
-        run: git remote add origin https://github.com/%GITHUB_REPOSITORY%.git
-      - shell: cmd
-        run: git fetch --depth=1 origin %GITHUB_SHA%
-      - shell: cmd
-        run: git checkout --force FETCH_HEAD
-      - shell: cmd
-        run: build.bat
-      - shell: cmd
-        run: if not exist dist mkdir dist
-      - shell: cmd
-        run: tar.exe -a -c -f dist\ceretree-windows-x64.zip -C bin ceretree.exe
-      - shell: cmd
-        run: tar.exe -czf dist\ceretree-linux-x64.tar.gz -C bin ceretree
-      - shell: cmd
-        run: git tag -f edge
-      - shell: cmd
-        run: git push origin refs\tags\edge --force
-      - shell: cmd
-        run: gh release view edge >nul 2>nul && gh release upload edge dist\ceretree-windows-x64.zip dist\ceretree-linux-x64.tar.gz --clobber || gh release create edge dist\ceretree-windows-x64.zip dist\ceretree-linux-x64.tar.gz --title edge --notes "Automated rolling prerelease from ci." --prerelease --latest=false
+      - run: ./build.sh all
+      - run: mkdir -p dist
+      - run: tar -czf dist/ceretree-linux-x64.tar.gz -C bin ceretree
+      - run: zip -j dist/ceretree-windows-x64.zip bin/ceretree.exe
+      - run: git tag -f edge
+      - run: git push origin refs/tags/edge --force
+      - run: gh release view edge >/dev/null 2>&1 || gh release create edge --title edge --notes "Automated rolling prerelease from ci." --prerelease --latest=false || gh release view edge >/dev/null 2>&1
+      - run: gh release upload edge dist/ceretree-linux-x64.tar.gz dist/ceretree-windows-x64.zip --clobber
