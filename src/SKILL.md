@@ -2,7 +2,13 @@
 
 Use `ceretree` as a fast code-exploration backend for source trees registered through JSON-RPC.
 
-For persistent stdio mode, send one JSON-RPC request per line and read one JSON-RPC response per line.
+## Current state and transport direction
+
+- Current released builds support one-shot CLI JSON-RPC and stdio server mode.
+- The preferred future persistent transport is plain HTTP request response over a Unix domain socket while keeping JSON-RPC 2.0 as the message format.
+- The reason is practical: many agent runtimes can reissue independent HTTP requests easily, but cannot keep and reuse a subprocess stdio handle across separate tool calls.
+- When the Unix-socket HTTP server lands, prefer that transport over stdio for persistent multi-request workflows.
+- On Windows, if you use curl, call the real binary `curl.exe`, not the PowerShell alias `curl`.
 
 ## When to use which command
 
@@ -25,6 +31,21 @@ For persistent stdio mode, send one JSON-RPC request per line and read one JSON-
 6. Call `query.common` for common cases that do not need raw query syntax.
 7. Page broad result sets with `limit` and `offset`.
 8. If the result is still too broad or you need a special structural pattern, fall back to `query`.
+
+## Preferred persistent server lifecycle
+
+- Choose a unique temporary Unix socket path yourself.
+- Start the server once and give that process a long timeout so you can reuse it across many requests.
+- Keep the server alive while doing other agent work between requests.
+- Send simple HTTP `POST` requests carrying one JSON-RPC request body and expect one JSON-RPC response body back.
+- Use a curl-compatible client so the same flow works on Windows and Linux.
+- Stop the server explicitly when finished and remove the socket path.
+
+## Windows note
+
+- In PowerShell, `curl` is often an alias and should not be assumed to support Unix sockets correctly.
+- Prefer `curl.exe` on Windows when using Unix-socket HTTP.
+- On Unix-like shells, prefer the normal `curl` binary.
 
 ## Why keep raw Tree-sitter queries available
 

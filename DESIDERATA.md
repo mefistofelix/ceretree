@@ -1,39 +1,44 @@
 # ceretree
 
-ceretree is a tool that allows to query source/text files one or more folders recursively with a jsonrpc protocol
-the same static standalone binary that can be used (default) via cli passing the raw rpc request or in server mode which will listen on stdio/unixsocket/networksocket
-ceretree will monitor in realtime via fs change events in server mode for folders/files changes or reload the data in cli mode
-in both modes ceretree will cache along the executable in a .ceretree-cache folder the treesitter informations to sppedup querying
+ceretree is a tool that allows querying source and text files recursively across one or more folders through a jsonrpc protocol
+the same static standalone binary can be used in cli one shot mode passing the raw rpc request or in server mode
+ceretree will monitor files in realtime in server mode and will reload data in cli mode
+in both modes ceretree will cache next to the executable in a .ceretree-cache folder to speed up querying
 
 the basic rpc command has 2 args a treesitter query and
-an optional relative glob path for inclusion and a relative glob path for exclusion of files (glob with double star support)
+an optional relative glob path for inclusion and a relative glob path for exclusion of files with double star support
 by default all registered folders are searched recursively
 
-anoter rpc command allows to add and remove folders from the monitored and queryable folders
+another rpc command allows adding and removing folders from the monitored and queryable roots
 
 we should support all official treesitter languages available, c/c++ golang rust js/ts php lua python bash batch powershell are the must have
 
-we want to be skill/mcp friendly in the implementation the cerebro tool is targeted to ai agents for coding to
-allow understanding code bases symbols around the source tree, signature symbols discover calltrees callsites etc ect
-also add other useful one shot rpc command for common cases in the scenario
+we want to be skill and mcp friendly in the implementation
+the tool is targeted to ai agents for coding to allow understanding code bases, symbols around the source tree, signatures, call trees, callsites and similar exploration tasks
+also add other useful one shot rpc commands for common cases in the scenario
 
-wthe single static executable binary must incldue also any dependency in our case the treesitters dll/so
+the single static executable binary must include also any dependency in our case the treesitter runtime and grammars
 
-we also need a skill.md file or folder that enable the ceretree tool for an ai agent and relative installation instructions in README.md
+we also need a skill.md file or folder that enables the ceretree tool for an ai agent and relative installation instructions in README.md
 
-server i comandi json la cache il monitoring dei files 
-le query treesitter multifile su glob e i comandi rpc utili e le feature utili a fare uno skill.md da dare a 
-un agent che possa esplorare il codice sorgente in modo performante e potente con query varie sul codice, 
-serve anche una test suite con esempi common es trovare tutte le chiamate a una certa funzione tutte le funzioni con 
-una certa signature e altre cose utili che ti vengono in mente, se servono nuovi comandi o si possono sintetizzare 
-certe query molto comuni treesitter in comandi specifici senza dover specificare query lunghe e tediose aggiungiamoli 
-prendiamo spunto da altri progetti simili come ad esempio https://github.com/oraios/serena e facciamo test in locale su 
-code base piccole o anche più grandi e in vari linguaggi es wordpress redis
+server commands, cache, file monitoring, multifile treesitter queries over globs, useful rpc commands and useful features should make a skill.md that lets an agent explore source code in a performant and powerful way
+we also need a test suite with common examples such as finding all calls to a function, all functions with a certain signature, and other useful cases
+if new commands are needed or if some common treesitter queries can be synthesized into shorter rpc commands instead of long tedious raw queries we should add them
+take inspiration from similar projects such as https://github.com/oraios/serena and run tests locally on small and larger code bases and in various languages such as wordpress and redis
 
-va lasciata la funzionalità di query grezze multifile etc e va spegato anche nello 
-skill cos' l'agent se vuole fare qualcosa di particolare può andare più a basso livello
+the raw multifile query functionality must remain available and the skill must explain it so the agent can go to a lower level when needed
 
-il file skill deve spiegare bene le motivazioni le funzionalità come chiamare il server come e quando farlo partire e 
-stoppare se usare curl o altro per interrogarlo esempi di risposte del server etc
+the skill file must explain clearly the motivations, capabilities, how to call the server, when to start and stop it, whether to use curl or something else to query it, and examples of server responses
 
- servirà un limit/paging dei risultati
+there should be result limit and paging
+
+transport direction and rationale:
+- the preferred persistent server transport should be simple http request response over unix domain socket
+- one request must produce one response and the protocol should stay jsonrpc 2.0 also over http to preserve method names, response shapes and errors across cli and server modes
+- stdio server mode is less useful for many agent runtimes because they often do not expose a reusable persistent process handle across separate tool calls
+- http over unix socket is preferred because an agent can start the server once with a long timeout and then call it many times through curl or equivalent stateless clients without needing a stdio handle
+- the unix socket path should be chosen by the calling agent and passed explicitly on the cli so the caller can manage isolation and cleanup with a temporary unique path
+- tcp ports should be avoided when possible to reduce namespace pollution and local security friction
+- the transport should be designed around mainstream tools available by default on windows and linux; if windows powershell aliases are confusing the skill must explicitly say to use the real curl binary such as curl.exe on windows
+- the skill must explain very clearly the exact lifecycle expected from an agent: choose a temporary socket path, spawn the server with a long timeout, keep it alive while doing multiple queries, use curl compatible post requests, then stop the server and delete the socket
+- the skill must explain that the persistent server enables parallel or interleaved requests from separate agent steps because the transport is reattachable, unlike raw stdio in agent runtimes without process handle primitives
