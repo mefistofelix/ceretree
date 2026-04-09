@@ -116,3 +116,5 @@
 - `workflow_dispatch` MAY be used by `XAgent` for CI testing when useful, and MAY also be preferred for manual release testing
 - `XAgent` MUST choose exactly one CI trigger for a given intended release or test run and MUST NOT start a second trigger while another equivalent run is already active or already sufficient
 - if both a tag-triggered run and a manual run exist for the same intended release or the same commit, `XAgent` MUST keep only one and MUST cancel the duplicate
+- completly inogre the folder PRIVATE in the project root
+- if it's not for debuggint the action/ci dont wait for github actions to finish 
