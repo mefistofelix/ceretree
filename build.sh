@@ -5,6 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 GO_VERSION="1.26.2"
 ZIG_VERSION="0.15.2"
 BUN_VERSION="bun-v1.3.11"
+TREE_SITTER_VERSION="v0.26.8"
 GO_DIR="$ROOT/build_cache/toolchains/go"
 GO_BIN="$GO_DIR/bin/go"
 GO_ARCHIVE="$ROOT/build_cache/downloads/go${GO_VERSION}.linux-amd64.tar.gz"
@@ -14,10 +15,6 @@ ZIG_ARCHIVE="$ROOT/build_cache/downloads/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
 BUN_DIR="$ROOT/build_cache/toolchains/bun-linux-x64-$BUN_VERSION"
 BUN_BIN="$BUN_DIR/bun"
 BUN_ARCHIVE="$ROOT/build_cache/downloads/bun-linux-x64-$BUN_VERSION.zip"
-RUSTUP_HOME="$ROOT/build_cache/rustup"
-CARGO_HOME="$ROOT/build_cache/cargo"
-RUSTUP_INIT="$ROOT/build_cache/downloads/rustup-init.sh"
-TARGET_TRIPLE="x86_64-unknown-linux-gnu"
 WRAPPER_DIR="$ROOT/build_cache/tool_wrappers"
 GEN_DIR="$ROOT/build_cache/generated"
 OBJ_DIR="$GEN_DIR/obj"
@@ -26,6 +23,7 @@ SRC_DIR="$GEN_DIR/src"
 LIB_DIR="$GEN_DIR/lib"
 GRAMMAR_ROOT="$ROOT/build_cache/grammars"
 TREE_SITTER_BIN="$ROOT/build_cache/tools/tree-sitter-cli/bin/tree-sitter"
+TREE_SITTER_ARCHIVE="$ROOT/build_cache/downloads/tree-sitter-cli-linux-x64.zip"
 
 mkdir -p "$ROOT/build_cache/downloads" "$ROOT/build_cache/toolchains" "$ROOT/bin" "$ROOT/build_cache/gopath" "$ROOT/build_cache/gocache" "$WRAPPER_DIR" "$OBJ_DIR" "$INC_DIR" "$SRC_DIR" "$LIB_DIR" "$GRAMMAR_ROOT"
 
@@ -48,43 +46,32 @@ if [ ! -x "$BUN_BIN" ]; then
   unzip -qo "$BUN_ARCHIVE" -d "$ROOT/build_cache/toolchains"
 fi
 
-if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
-  curl -fsSL https://sh.rustup.rs -o "$RUSTUP_INIT"
-  chmod +x "$RUSTUP_INIT"
-  env RUSTUP_HOME="$RUSTUP_HOME" CARGO_HOME="$CARGO_HOME" sh "$RUSTUP_INIT" -y --profile minimal --default-toolchain none --no-modify-path
+if [ ! -x "$TREE_SITTER_BIN" ]; then
+  curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/$TREE_SITTER_VERSION/tree-sitter-cli-linux-x64.zip" -o "$TREE_SITTER_ARCHIVE"
+  rm -rf "$ROOT/build_cache/tools/tree-sitter-cli"
+  mkdir -p "$ROOT/build_cache/tools/tree-sitter-cli/bin"
+  unzip -qo "$TREE_SITTER_ARCHIVE" -d "$ROOT/build_cache/tools/tree-sitter-cli/bin"
 fi
 
 cat >"$WRAPPER_DIR/zig-cc.sh" <<EOF
 #!/usr/bin/env sh
-exec "$ZIG_BIN" cc -target $TARGET_TRIPLE "\$@"
+exec "$ZIG_BIN" cc -target x86_64-linux-gnu "\$@"
 EOF
 chmod +x "$WRAPPER_DIR/zig-cc.sh"
 
 cat >"$WRAPPER_DIR/zig-cxx.sh" <<EOF
 #!/usr/bin/env sh
-exec "$ZIG_BIN" c++ -target $TARGET_TRIPLE "\$@"
+exec "$ZIG_BIN" c++ -target x86_64-linux-gnu "\$@"
 EOF
 chmod +x "$WRAPPER_DIR/zig-cxx.sh"
 
 export GOROOT="$GO_DIR"
 export GOPATH="$ROOT/build_cache/gopath"
 export GOCACHE="$ROOT/build_cache/gocache"
-export RUSTUP_HOME
-export CARGO_HOME
-export PATH="$GOROOT/bin:$BUN_DIR:$CARGO_HOME/bin:$PATH"
-export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$WRAPPER_DIR/zig-cc.sh"
+export PATH="$GOROOT/bin:$BUN_DIR:$PATH"
 export CC="$WRAPPER_DIR/zig-cc.sh"
 export CXX="$WRAPPER_DIR/zig-cxx.sh"
 export CGO_ENABLED=1
-
-if ! rustup toolchain list | grep -q "$TARGET_TRIPLE"; then
-  rustup toolchain install "stable-$TARGET_TRIPLE" --profile minimal
-fi
-rustup default "stable-$TARGET_TRIPLE"
-
-if [ ! -x "$TREE_SITTER_BIN" ]; then
-  cargo install --locked --no-default-features tree-sitter-cli --root "$ROOT/build_cache/tools/tree-sitter-cli"
-fi
 
 rm -f "$OBJ_DIR"/* "$SRC_DIR"/ceretree_grammars.c "$INC_DIR"/ceretree_grammars.h "$LIB_DIR"/libceretree_grammars.a
 

@@ -7,9 +7,7 @@ if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 set "GO_VERSION=1.26.2"
 set "ZIG_VERSION=0.15.2"
 set "BUN_VERSION=bun-v1.3.11"
-set "MSVC_VERSION=14.44.17.14"
-set "SDK_VERSION=10.0.22621.7"
-set "TARGET_TRIPLE=x86_64-pc-windows-msvc"
+set "TREE_SITTER_VERSION=v0.26.8"
 
 set "DOWNLOADS_DIR=%ROOT%\build_cache\downloads"
 set "TOOLCHAINS_DIR=%ROOT%\build_cache\toolchains"
@@ -23,14 +21,8 @@ set "ZIG_ZIP=%DOWNLOADS_DIR%\zig-x86_64-windows-%ZIG_VERSION%.zip"
 set "BUN_DIR=%TOOLCHAINS_DIR%\bun-windows-x64"
 set "BUN_EXE=%BUN_DIR%\bun.exe"
 set "BUN_ZIP=%DOWNLOADS_DIR%\bun-windows-x64.zip"
-set "MSVCUP_DIR=%ROOT%\build_cache\tools\msvcup"
-set "MSVCUP_EXE=%MSVCUP_DIR%\msvcup.exe"
-set "MSVCUP_ZIP=%DOWNLOADS_DIR%\msvcup-x86_64-windows.zip"
-set "MSVC_INSTALL_DIR=%ROOT%\build_cache\msvc"
-set "RUSTUP_HOME=%ROOT%\build_cache\rustup"
-set "CARGO_HOME=%ROOT%\build_cache\cargo"
-set "RUSTUP_INIT=%DOWNLOADS_DIR%\rustup-init.exe"
 set "TREE_SITTER_EXE=%ROOT%\build_cache\tools\tree-sitter-cli\bin\tree-sitter.exe"
+set "TREE_SITTER_ZIP=%DOWNLOADS_DIR%\tree-sitter-cli-windows-x64.zip"
 set "WRAPPER_DIR=%ROOT%\build_cache\tool_wrappers"
 set "GRAMMAR_ROOT=%ROOT%\build_cache\grammars"
 set "GENERATED_DIR=%ROOT%\build_cache\generated"
@@ -41,7 +33,7 @@ set "LIB_DIR=%GENERATED_DIR%\lib"
 set "LIB_FILE=%LIB_DIR%\ceretree_grammars.a"
 set "OBJECTS="
 
-for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%MSVCUP_DIR%" "%RUSTUP_HOME%" "%CARGO_HOME%" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
+for %%D in ("%DOWNLOADS_DIR%" "%TOOLCHAINS_DIR%" "%ROOT%\bin" "%ROOT%\build_cache\gopath" "%ROOT%\build_cache\gocache" "%ROOT%\build_cache\tools" "%WRAPPER_DIR%" "%GRAMMAR_ROOT%" "%OBJ_DIR%" "%INC_DIR%" "%SRC_DIR%" "%LIB_DIR%") do (
   if not exist "%%~D" mkdir "%%~D"
 )
 
@@ -63,33 +55,14 @@ if not exist "%BUN_EXE%" (
   tar.exe -xf "%BUN_ZIP%" -C "%TOOLCHAINS_DIR%" || goto :fail
 )
 
-if not exist "%MSVCUP_EXE%" (
-  gh release download v2026_03_02 -R marler8997/msvcup -p "msvcup-x86_64-windows.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
-  tar.exe -xf "%MSVCUP_ZIP%" -C "%MSVCUP_DIR%" || goto :fail
+if not exist "%TREE_SITTER_EXE%" (
+  gh release download "%TREE_SITTER_VERSION%" -R tree-sitter/tree-sitter -p "tree-sitter-cli-windows-x64.zip" -D "%DOWNLOADS_DIR%" --clobber || goto :fail
+  if exist "%ROOT%\build_cache\tools\tree-sitter-cli" rmdir /s /q "%ROOT%\build_cache\tools\tree-sitter-cli"
+  mkdir "%ROOT%\build_cache\tools\tree-sitter-cli\bin" || goto :fail
+  tar.exe -xf "%TREE_SITTER_ZIP%" -C "%ROOT%\build_cache\tools\tree-sitter-cli\bin" || goto :fail
 )
 
-if not exist "%MSVC_INSTALL_DIR%\vcvars-x64.bat" (
-  "%MSVCUP_EXE%" install --manifest-update-off "%MSVC_INSTALL_DIR%" autoenv msvc-%MSVC_VERSION% sdk-%SDK_VERSION% || goto :fail
-)
-
-set "PATH=%GO_DIR%\bin;%BUN_DIR%;%CARGO_HOME%\bin;%PATH%"
-set "RUSTUP_HOME=%RUSTUP_HOME%"
-set "CARGO_HOME=%CARGO_HOME%"
-call "%MSVC_INSTALL_DIR%\vcvars-x64.bat" || goto :fail
-
-if not exist "%CARGO_HOME%\bin\rustup.exe" (
-  curl.exe -fsSL "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe" -o "%RUSTUP_INIT%" || goto :fail
-  "%RUSTUP_INIT%" -y --profile minimal --default-toolchain none --no-modify-path || goto :fail
-)
-
-rustup run stable-%TARGET_TRIPLE% rustc -vV >nul 2>nul
-if errorlevel 1 (
-  rustup toolchain uninstall stable-%TARGET_TRIPLE% >nul 2>nul
-  rustup toolchain install stable-%TARGET_TRIPLE% --profile minimal || goto :fail
-)
-rustup default stable-%TARGET_TRIPLE% || goto :fail
-
-if not exist "%TREE_SITTER_EXE%" cargo install --locked --no-default-features tree-sitter-cli --root "%ROOT%\build_cache\tools\tree-sitter-cli" || goto :fail
+set "PATH=%GO_DIR%\bin;%BUN_DIR%;%PATH%"
 
 >"%WRAPPER_DIR%\zig-cc.cmd" (
   echo @echo off

@@ -11,7 +11,7 @@ The current implementation provides:
 - recursive file discovery with relative include and exclude globs supporting `**`
 - Tree-sitter query execution against grammars statically linked into the final binary
 - build-time grammar regeneration on every build through `tree-sitter-cli`
-- portable bootstrap under `build_cache/` for Go, Zig, rustup/cargo, Bun, and `tree-sitter-cli`
+- portable bootstrap under `build_cache/` for Go, Zig, Bun, and the official `tree-sitter-cli` release binaries
 
 Current supported grammars:
 
@@ -60,17 +60,13 @@ This keeps the release binary self-contained while avoiding pre-generated gramma
 - Go `1.26.2`
 - Zig `0.15.2`
 - Bun `1.3.11`
-- `msvcup` with `msvc-14.44.17.14` and `sdk-10.0.22621.7`
-- rustup/cargo
-- `tree-sitter-cli` built with `--no-default-features` and driven through Bun
+- `tree-sitter-cli` `v0.26.8` from the official Windows x64 release asset
 
-`build.sh` bootstraps the same toolchain set for Linux.
+`build.sh` bootstraps the same toolchain set for Linux using the official Linux x64 release asset.
 
 Portable tool state is stored under:
 
 - `build_cache/toolchains/`
-- `build_cache/cargo/`
-- `build_cache/rustup/`
 - `build_cache/tools/`
 - `build_cache/grammars/`
 - `build_cache/generated/`
@@ -129,9 +125,9 @@ The black-box tests exercise:
 - `roots.add`
 - `query` on `src/main.go`
 
-On Windows, Rust is bootstrapped against a standalone MSVC environment installed in `build_cache/msvc` through `msvcup`, while Zig remains the compiler used for grammar object generation and Go `cgo`.
+The build no longer compiles `tree-sitter-cli` locally. It downloads the official upstream release binary for the current platform and uses Bun as the JavaScript runtime for `tree-sitter generate`.
 
-The local `tree-sitter-cli` install intentionally disables the optional native QuickJS runtime. Every grammar regeneration step runs `tree-sitter generate --js-runtime <bun>`, so parser generation still works without the extra `libclang` dependency chain that the native QuickJS feature would pull into the Windows bootstrap.
+For grammars that depend on JavaScript packages, the build runs `bun install --ignore-scripts` in the grammar repository root and, when present, again in the grammar subdirectory. This matters for multi-grammar repositories such as `tree-sitter-typescript`, where `tsx/grammar.js` resolves dependencies from the repository root.
 
 ## JSON-RPC methods
 
