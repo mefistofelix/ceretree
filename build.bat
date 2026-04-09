@@ -101,12 +101,12 @@ set "CGO_ENABLED=1"
   echo #include "ceretree_grammars.h"
 )
 
-for /f "usebackq tokens=1-5 delims=|" %%A in ("%ROOT%\GRAMMARS.txt") do (
+for /f "usebackq tokens=1-5 delims=|" %%A in ("%ROOT%\src\GRAMMARS.txt") do (
   call :prepare_grammar "%%~A" "%%~B" "%%~C" "%%~D" "%%~E" || goto :fail
 )
 
 >>"%SRC_DIR%\ceretree_grammars.c" echo const TSLanguage *ceretree_language^(const char *name^) {
-for /f "usebackq tokens=1 delims=|" %%A in ("%ROOT%\GRAMMARS.txt") do (
+for /f "usebackq tokens=1 delims=|" %%A in ("%ROOT%\src\GRAMMARS.txt") do (
   >>"%SRC_DIR%\ceretree_grammars.c" echo   if ^(strcmp^(name, "%%~A"^) == 0^) return tree_sitter_%%~A^(^);
 )
 >>"%SRC_DIR%\ceretree_grammars.c" echo   return 0;
@@ -134,7 +134,7 @@ if exist "%LIB_FILE%" del /q "%LIB_FILE%" >nul 2>nul
 call "%TARGET_CC%" -c -O2 "-I%INC_DIR%" "%SRC_DIR%\ceretree_grammars.c" "-o%OBJ_DIR%\ceretree_grammars.o" || exit /b 1
 set "OBJECTS=%OBJECTS% "%OBJ_DIR%\ceretree_grammars.o""
 
-for /f "usebackq tokens=1-5 delims=|" %%A in ("%ROOT%\GRAMMARS.txt") do (
+for /f "usebackq tokens=1-5 delims=|" %%A in ("%ROOT%\src\GRAMMARS.txt") do (
   call :compile_grammar_objects "%%~A" "%%~D" || exit /b 1
 )
 

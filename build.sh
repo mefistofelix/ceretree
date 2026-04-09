@@ -166,7 +166,7 @@ EOF
   if [ -f "$grammar_dir/src/scanner.cc" ]; then
     "$WRAPPER_DIR/zig-cxx.sh" -c -O2 -I"$grammar_dir/src" "$grammar_dir/src/scanner.cc" -o "$OBJ_DIR/${language}_scanner_cc.o"
   fi
-done <"$ROOT/GRAMMARS.txt"
+done <"$ROOT/src/GRAMMARS.txt"
 
 cat >>"$SRC_DIR/ceretree_grammars.c" <<'EOF'
 const TSLanguage *ceretree_language(const char *name) {
@@ -177,7 +177,7 @@ while IFS='|' read -r language _rest; do
   cat >>"$SRC_DIR/ceretree_grammars.c" <<EOF
   if (strcmp(name, "$language") == 0) return tree_sitter_${language}();
 EOF
-done <"$ROOT/GRAMMARS.txt"
+done <"$ROOT/src/GRAMMARS.txt"
 
 cat >>"$SRC_DIR/ceretree_grammars.c" <<'EOF'
   return 0;

@@ -43,7 +43,7 @@ The build is intentionally self-bootstrapping and incrementally reuses grammar w
 The pipeline is:
 
 1. bootstrap portable toolchains into `build_cache/`
-2. resolve each grammar ref from `GRAMMARS.txt` to a concrete GitHub commit and download a source snapshot archive
+2. resolve each grammar ref from `src/GRAMMARS.txt` to a concrete GitHub commit and download a source snapshot archive
 3. install grammar-repo and grammar-local JS dependencies with Bun when required
    using `bun install --ignore-scripts` because grammar generation only needs package resolution, not native Node addon build hooks
 4. run `tree-sitter generate` only when the cached grammar generation sentinel is stale
@@ -84,7 +84,7 @@ Portable tool state is stored under:
 
 ## Grammar manifest
 
-Grammar repository selections live in [`GRAMMARS.txt`](C:/Users/Michele/Desktop/ceretree/GRAMMARS.txt).
+Grammar repository selections live in [`src/GRAMMARS.txt`](C:/Users/Michele/Desktop/ceretree/src/GRAMMARS.txt).
 
 Each line is:
 
