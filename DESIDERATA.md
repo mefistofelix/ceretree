@@ -20,3 +20,20 @@ also add other useful one shot rpc command for common cases in the scenario
 wthe single static executable binary must incldue also any dependency in our case the treesitters dll/so
 
 we also need a skill.md file or folder that enable the ceretree tool for an ai agent and relative installation instructions in README.md
+
+server i comandi json la cache il monitoring dei files 
+le query treesitter multifile su glob e i comandi rpc utili e le feature utili a fare uno skill.md da dare a 
+un agent che possa esplorare il codice sorgente in modo performante e potente con query varie sul codice, 
+serve anche una test suite con esempi common es trovare tutte le chiamate a una certa funzione tutte le funzioni con 
+una certa signature e altre cose utili che ti vengono in mente, se servono nuovi comandi o si possono sintetizzare 
+certe query molto comuni treesitter in comandi specifici senza dover specificare query lunghe e tediose aggiungiamoli 
+prendiamo spunto da altri progetti simili come ad esempio https://github.com/oraios/serena e facciamo test in locale su 
+code base piccole o anche più grandi e in vari linguaggi es wordpress redis
+
+va lasciata la funzionalità di query grezze multifile etc e va spegato anche nello 
+skill cos' l'agent se vuole fare qualcosa di particolare può andare più a basso livello
+
+il file skill deve spiegare bene le motivazioni le funzionalità come chiamare il server come e quando farlo partire e 
+stoppare se usare curl o altro per interrogarlo esempi di risposte del server etc
+
+ servirà un limit/paging dei risultati
